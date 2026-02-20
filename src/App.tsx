@@ -57,9 +57,7 @@ export default function App() {
       }
       const data = await res.json();
       setState(data);
-      // Only update form state if not editing (simple check: if values are empty or match previous state)
-      // Actually, we can just update them, it might overwrite user input if they are typing in settings, 
-      // but settings is a modal so we can just not update p1Name/p2Name if showSettings is true.
+      // Only update form state if not editing in settings modal
       if (!showSettings) {
         setP1Name(data.settings.parent1_name);
         setP2Name(data.settings.parent2_name);
@@ -124,7 +122,9 @@ export default function App() {
 
   const saveSettings = async () => {
     if (!familyId) return;
-    await fetch('/api/settings', {
+
+    // Wait for the settings to be saved to the server before proceeding
+    const response = await fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -134,9 +134,12 @@ export default function App() {
         bedtime
       })
     });
-    setShowSettings(false);
-    fetchState(familyId);
-    
+
+    if (!response.ok) {
+      console.error('Failed to save settings');
+      return;
+    }
+
     // Update current user if their name changed
     if (currentUser === state?.settings.parent1_name && p1Name !== currentUser) {
         setCurrentUser(p1Name);
@@ -145,6 +148,17 @@ export default function App() {
         setCurrentUser(p2Name);
         localStorage.setItem('starturn_current_user', p2Name);
     }
+
+    // Fetch the updated state from the server before closing modal
+    // to ensure the main state object has the latest values
+    const stateRes = await fetch(`/api/state?familyId=${familyId}`);
+    if (stateRes.ok) {
+      const data = await stateRes.json();
+      setState(data);
+    }
+
+    // Close the settings modal after everything is saved and synced
+    setShowSettings(false);
   };
 
   const subscribeToPush = async () => {
