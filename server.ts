@@ -1,8 +1,13 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
+import path from "path";
+import { fileURLToPath } from 'url';
 import { getSettings, updateSettings, toggleTurn, logAction, getLogs, saveSubscription, getSubscriptions, getVapidKeys, saveVapidKeys, getAllSettings } from "./src/db";
 import webpush from 'web-push';
 import { format } from 'date-fns';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Initialize VAPID keys
 let vapidKeys: { publicKey: string, privateKey: string };
@@ -60,38 +65,58 @@ async function startServer() {
   });
 
   app.get("/api/state", (req, res) => {
-    const familyId = req.query.familyId as string;
-    if (!familyId) return res.status(400).json({ error: 'Missing familyId' });
-    
-    const settings = getSettings(familyId);
-    const logs = getLogs(familyId);
-    res.json({ settings, logs });
+    try {
+      const familyId = req.query.familyId as string;
+      if (!familyId) return res.status(400).json({ error: 'Missing familyId' });
+      
+      const settings = getSettings(familyId);
+      const logs = getLogs(familyId);
+      res.json({ settings, logs });
+    } catch (error: any) {
+      console.error("Error in /api/state:", error);
+      res.status(500).json({ error: error.message || "Internal Server Error" });
+    }
   });
 
   app.post("/api/settings", (req, res) => {
-    const { familyId, parent1, parent2, bedtime } = req.body;
-    updateSettings(familyId, parent1, parent2, bedtime);
-    res.json({ success: true });
+    try {
+      const { familyId, parent1, parent2, bedtime } = req.body;
+      updateSettings(familyId, parent1, parent2, bedtime);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error in /api/settings:", error);
+      res.status(500).json({ error: error.message });
+    }
   });
 
   app.post("/api/complete-turn", (req, res) => {
-    const { familyId, parentName } = req.body;
-    logAction(familyId, parentName, 'completed_turn');
-    toggleTurn(familyId);
-    
-    const payload = JSON.stringify({ title: 'Turn Completed!', body: `${parentName} completed their turn. Next up!` });
-    const subs = getSubscriptions(familyId);
-    subs.forEach(sub => {
-      webpush.sendNotification(sub, payload).catch(err => console.error(err));
-    });
+    try {
+      const { familyId, parentName } = req.body;
+      logAction(familyId, parentName, 'completed_turn');
+      toggleTurn(familyId);
+      
+      const payload = JSON.stringify({ title: 'Turn Completed!', body: `${parentName} completed their turn. Next up!` });
+      const subs = getSubscriptions(familyId);
+      subs.forEach(sub => {
+        webpush.sendNotification(sub, payload).catch(err => console.error(err));
+      });
 
-    res.json({ success: true });
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error in /api/complete-turn:", error);
+      res.status(500).json({ error: error.message });
+    }
   });
 
   app.post("/api/subscribe", (req, res) => {
-    const { familyId, subscription } = req.body;
-    saveSubscription(familyId, subscription);
-    res.status(201).json({});
+    try {
+      const { familyId, subscription } = req.body;
+      saveSubscription(familyId, subscription);
+      res.status(201).json({});
+    } catch (error: any) {
+      console.error("Error in /api/subscribe:", error);
+      res.status(500).json({ error: error.message });
+    }
   });
 
   // Vite middleware
@@ -101,10 +126,24 @@ async function startServer() {
       appType: "spa",
     });
     app.use(vite.middlewares);
+  } else {
+    // Serve static files in production
+    const distPath = path.join(__dirname, 'dist');
+    app.use(express.static(distPath));
+    
+    // SPA fallback
+    app.get('*', (req, res) => {
+      if (req.path.startsWith('/api')) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
   }
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV}`);
+    console.log(`Data Directory: ${process.env.DATA_DIR || './data'}`);
   });
 }
 
