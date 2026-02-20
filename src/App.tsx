@@ -155,6 +155,10 @@ export default function App() {
     if (stateRes.ok) {
       const data = await stateRes.json();
       setState(data);
+      // Also update form state to prevent stale closures from overwriting on next poll
+      setP1Name(data.settings.parent1_name);
+      setP2Name(data.settings.parent2_name);
+      setBedtime(data.settings.bedtime);
     }
 
     // Close the settings modal after everything is saved and synced
