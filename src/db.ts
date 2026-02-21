@@ -43,6 +43,14 @@ db.exec(`
   );
 `);
 
+// Migrations: add new columns if they don't exist yet
+try { db.exec(`ALTER TABLE settings ADD COLUMN wake_time TEXT DEFAULT '07:00'`); } catch (_) {}
+try { db.exec(`ALTER TABLE settings ADD COLUMN is_setup_complete INTEGER DEFAULT 0`); } catch (_) {}
+try { db.exec(`ALTER TABLE logs ADD COLUMN night_date TEXT`); } catch (_) {}
+
+// Mark existing families that already have custom names as setup complete
+db.exec(`UPDATE settings SET is_setup_complete = 1 WHERE (parent1_name != 'Parent 1' OR parent2_name != 'Parent 2') AND is_setup_complete = 0`);
+
 export const getVapidKeys = () => {
   return db.prepare('SELECT * FROM vapid_keys WHERE id = 1').get();
 };
@@ -64,9 +72,23 @@ export const getSettings = (familyId: string) => {
   return settings;
 };
 
-export const updateSettings = (familyId: string, parent1: string, parent2: string, bedtime: string) => {
-  db.prepare('UPDATE settings SET parent1_name = ?, parent2_name = ?, bedtime = ? WHERE family_id = ?')
-    .run(parent1, parent2, bedtime, familyId);
+export const updateSettings = (
+  familyId: string,
+  parent1: string,
+  parent2: string,
+  bedtime: string,
+  wakeTime: string,
+  firstTurnIndex?: number
+) => {
+  if (firstTurnIndex !== undefined) {
+    db.prepare(
+      'UPDATE settings SET parent1_name = ?, parent2_name = ?, bedtime = ?, wake_time = ?, is_setup_complete = 1, current_turn_index = ? WHERE family_id = ?'
+    ).run(parent1, parent2, bedtime, wakeTime, firstTurnIndex, familyId);
+  } else {
+    db.prepare(
+      'UPDATE settings SET parent1_name = ?, parent2_name = ?, bedtime = ?, wake_time = ?, is_setup_complete = 1 WHERE family_id = ?'
+    ).run(parent1, parent2, bedtime, wakeTime, familyId);
+  }
 };
 
 export const toggleTurn = (familyId: string) => {
@@ -76,12 +98,50 @@ export const toggleTurn = (familyId: string) => {
   return newIndex;
 };
 
-export const logAction = (familyId: string, parentName: string, action: string) => {
-  db.prepare('INSERT INTO logs (family_id, parent_name, action) VALUES (?, ?, ?)').run(familyId, parentName, action);
+export const setTurnIndex = (familyId: string, index: number) => {
+  db.prepare('UPDATE settings SET current_turn_index = ?, last_switch_timestamp = CURRENT_TIMESTAMP WHERE family_id = ?').run(index, familyId);
+};
+
+export const logAction = (familyId: string, parentName: string, action: string, nightDate?: string) => {
+  db.prepare('INSERT INTO logs (family_id, parent_name, action, night_date) VALUES (?, ?, ?, ?)').run(familyId, parentName, action, nightDate ?? null);
 };
 
 export const getLogs = (familyId: string) => {
   return db.prepare('SELECT * FROM logs WHERE family_id = ? ORDER BY timestamp DESC LIMIT 10').all(familyId);
+};
+
+// Returns the first completed_turn or took_over entry for a given night (keyed by night_date)
+export const getFirstTripOfNight = (familyId: string, nightDate: string) => {
+  return db.prepare(
+    `SELECT * FROM logs
+     WHERE family_id = ? AND night_date = ? AND action IN ('completed_turn', 'took_over')
+     ORDER BY timestamp ASC LIMIT 1`
+  ).get(familyId, nightDate) as any;
+};
+
+// Returns all nights grouped, most recent first
+export const getJournal = (familyId: string) => {
+  const logs = db.prepare(
+    `SELECT * FROM logs
+     WHERE family_id = ? AND night_date IS NOT NULL
+     ORDER BY night_date DESC, timestamp ASC`
+  ).all(familyId) as any[];
+
+  const nights = new Map<string, any[]>();
+  for (const log of logs) {
+    if (!nights.has(log.night_date)) nights.set(log.night_date, []);
+    nights.get(log.night_date)!.push(log);
+  }
+
+  return Array.from(nights.entries()).map(([date, trips]) => {
+    // First person = first completed_turn or took_over
+    const firstTrip = trips.find(t => t.action === 'completed_turn' || t.action === 'took_over');
+    return {
+      night_date: date,
+      first_parent: firstTrip ? firstTrip.parent_name : null,
+      trips
+    };
+  });
 };
 
 export const saveSubscription = (familyId: string, sub: any) => {
