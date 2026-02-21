@@ -68,6 +68,10 @@ try { db.exec(`ALTER TABLE settings ADD COLUMN parent1_email TEXT`); } catch (_)
 try { db.exec(`ALTER TABLE settings ADD COLUMN parent2_email TEXT`); } catch (_) {}
 try { db.exec(`ALTER TABLE subscriptions ADD COLUMN parent_index INTEGER DEFAULT -1`); } catch (_) {}
 
+// Email indexes for lookup
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_settings_parent1_email ON settings(parent1_email)`); } catch (_) {}
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_settings_parent2_email ON settings(parent2_email)`); } catch (_) {}
+
 // Mark existing families that already have custom names as setup complete
 db.exec(`UPDATE settings SET is_setup_complete = 1 WHERE (parent1_name != 'Parent 1' OR parent2_name != 'Parent 2') AND is_setup_complete = 0`);
 
@@ -84,12 +88,7 @@ export const getAllSettings = () => {
 };
 
 export const getSettings = (familyId: string) => {
-  let settings = db.prepare('SELECT * FROM settings WHERE family_id = ?').get(familyId);
-  if (!settings) {
-    db.prepare('INSERT INTO settings (family_id) VALUES (?)').run(familyId);
-    settings = db.prepare('SELECT * FROM settings WHERE family_id = ?').get(familyId);
-  }
-  return settings;
+  return db.prepare('SELECT * FROM settings WHERE family_id = ?').get(familyId) || null;
 };
 
 export const updateSettings = (
@@ -236,6 +235,36 @@ export const cleanupExpired = () => {
 };
 
 // ─── Auth: Email helpers ────────────────────────────────────────────────────
+
+export const findFamilyByEmail = (email: string): { family: any; parentIndex: number } | null => {
+  const normalized = email.trim().toLowerCase();
+  const row = db.prepare(
+    'SELECT * FROM settings WHERE LOWER(parent1_email) = ? OR LOWER(parent2_email) = ?'
+  ).get(normalized, normalized) as any;
+  if (!row) return null;
+  const parentIndex = (row.parent1_email || '').toLowerCase() === normalized ? 0 : 1;
+  return { family: row, parentIndex };
+};
+
+export const generateFamilyId = (): string => {
+  return crypto.randomBytes(16).toString('hex');
+};
+
+export const createFamily = (
+  familyId: string,
+  parent1Name: string,
+  parent1Email: string,
+  parent2Name: string,
+  parent2Email: string,
+  bedtime: string,
+  wakeTime: string,
+  firstTurnIndex: number
+) => {
+  db.prepare(
+    `INSERT INTO settings (family_id, parent1_name, parent1_email, parent2_name, parent2_email, bedtime, wake_time, current_turn_index, is_setup_complete)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`
+  ).run(familyId, parent1Name, parent1Email, parent2Name, parent2Email, bedtime, wakeTime, firstTurnIndex);
+};
 
 export const getParentEmail = (familyId: string, parentIndex: number): string | null => {
   const settings: any = getSettings(familyId);

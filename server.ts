@@ -11,7 +11,8 @@ import {
   getAllSettings, getFirstTripOfNight, setTurnIndex, getJournal,
   createMagicLink, consumeMagicLink, createSession, getSession,
   deleteSession, cleanupExpired, getParentEmail,
-  saveSubscriptionWithParent, getSubscriptionsForParent
+  saveSubscriptionWithParent, getSubscriptionsForParent,
+  findFamilyByEmail, generateFamilyId, createFamily
 } from "./src/db";
 import webpush from 'web-push';
 import { format, subDays } from 'date-fns';
@@ -51,6 +52,36 @@ async function sendMagicLinkEmail(email: string, token: string, parentName: stri
   }
 
   console.log(`Magic link email sent successfully to ${email} (ID: ${data?.id})`);
+}
+
+async function sendInviteEmail(email: string, recipientName: string, inviterName: string) {
+  const baseUrl = process.env.APP_URL || 'http://localhost:3000';
+
+  if (!resend) {
+    console.log(`[DEV] Invite email for ${recipientName} (invited by ${inviterName}): ${baseUrl}`);
+    return;
+  }
+
+  const { data, error } = await resend.emails.send({
+    from: process.env.RESEND_FROM || 'StarTurn <noreply@starturn.app>',
+    to: email,
+    subject: `${inviterName} invited you to StarTurn`,
+    html: `
+      <div style="font-family: system-ui, sans-serif; max-width: 400px; margin: 0 auto; padding: 32px;">
+        <h2 style="color: #312e81;">Hi ${recipientName},</h2>
+        <p>${inviterName} invited you to share nighttime duties on StarTurn!</p>
+        <p>StarTurn helps you and ${inviterName} take turns with nighttime wake-ups, so everyone knows whose turn it is.</p>
+        <a href="${baseUrl}" style="display: inline-block; background: #4f46e5; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">Get Started</a>
+        <p style="color: #6b7280; font-size: 14px; margin-top: 24px;">Just enter your email address when you get there, and you'll be linked up automatically.</p>
+      </div>
+    `
+  });
+
+  if (error) {
+    console.error('Failed to send invite email:', error);
+  } else {
+    console.log(`Invite email sent successfully to ${email} (ID: ${data?.id})`);
+  }
 }
 
 // ─── VAPID keys (push notifications) ────────────────────────────────────────
@@ -213,41 +244,69 @@ async function startServer() {
 
   // ─── Auth Routes (unauthenticated) ─────────────────────────────────────
 
-  app.get("/api/auth/family-info", (req, res) => {
+  app.post("/api/auth/email-lookup", async (req, res) => {
     try {
-      const familyId = req.query.familyId as string;
-      if (!familyId) return res.status(400).json({ error: 'Missing familyId' });
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ error: 'Missing email' });
 
-      const settings: any = getSettings(familyId);
-      res.json({
-        exists: true,
-        isSetupComplete: settings.is_setup_complete === 1,
-        parent1Name: settings.parent1_name,
-        parent2Name: settings.parent2_name,
-      });
+      const normalizedEmail = email.trim().toLowerCase();
+      const result = findFamilyByEmail(normalizedEmail);
+
+      if (!result) {
+        return res.json({ status: 'unknown' });
+      }
+
+      const { family, parentIndex } = result;
+      const name = parentIndex === 0 ? family.parent1_name : family.parent2_name;
+      const token = createMagicLink(family.family_id, parentIndex, normalizedEmail);
+      await sendMagicLinkEmail(normalizedEmail, token, name);
+
+      res.json({ status: 'known' });
     } catch (error: any) {
-      console.error("Error in /api/auth/family-info:", error);
+      console.error("Error in /api/auth/email-lookup:", error);
       res.status(500).json({ error: error.message });
     }
   });
 
   app.post("/api/auth/setup", async (req, res) => {
     try {
-      const { familyId, parent1, parent1Email, parent2, parent2Email, bedtime, wakeTime, firstTurnIndex, actingParentIndex } = req.body;
-      if (!familyId || !parent1 || !parent1Email || !parent2 || !parent2Email) {
+      const { email, name, partnerName, partnerEmail, bedtime, wakeTime, firstTurnIndex } = req.body;
+      if (!email || !name || !partnerName || !partnerEmail) {
         return res.status(400).json({ error: 'Missing required fields' });
       }
 
-      // Ensure the family row exists (getSettings auto-creates)
-      getSettings(familyId);
-      updateSettings(familyId, parent1, parent2, bedtime || '22:00', wakeTime || '07:00', firstTurnIndex ?? 0, parent1Email, parent2Email);
+      const normalizedEmail = email.trim().toLowerCase();
+      const normalizedPartnerEmail = partnerEmail.trim().toLowerCase();
 
-      // Send magic link to the acting parent
-      const pIndex = actingParentIndex ?? 0;
-      const email = pIndex === 0 ? parent1Email : parent2Email;
-      const name = pIndex === 0 ? parent1 : parent2;
-      const token = createMagicLink(familyId, pIndex, email);
-      await sendMagicLinkEmail(email, token, name);
+      // Check if either email is already registered
+      const existing = findFamilyByEmail(normalizedEmail);
+      if (existing) {
+        return res.status(409).json({ error: 'Email already registered' });
+      }
+      const partnerExisting = findFamilyByEmail(normalizedPartnerEmail);
+      if (partnerExisting) {
+        return res.status(409).json({ error: 'Partner email already registered with another family' });
+      }
+
+      // Generate family ID and create family
+      const familyId = generateFamilyId();
+      createFamily(
+        familyId,
+        name.trim(),
+        normalizedEmail,
+        partnerName.trim(),
+        normalizedPartnerEmail,
+        bedtime || '22:00',
+        wakeTime || '07:00',
+        firstTurnIndex ?? 0
+      );
+
+      // Send magic link to the acting parent (always parent1 / index 0)
+      const token = createMagicLink(familyId, 0, normalizedEmail);
+      await sendMagicLinkEmail(normalizedEmail, token, name.trim());
+
+      // Send invite email to partner
+      await sendInviteEmail(normalizedPartnerEmail, partnerName.trim(), name.trim());
 
       res.json({ success: true });
     } catch (error: any) {
@@ -258,20 +317,19 @@ async function startServer() {
 
   app.post("/api/auth/request-link", async (req, res) => {
     try {
-      const { familyId, parentIndex } = req.body;
-      if (!familyId || parentIndex === undefined) {
-        return res.status(400).json({ error: 'Missing required fields' });
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ error: 'Missing email' });
+
+      const normalizedEmail = email.trim().toLowerCase();
+      const result = findFamilyByEmail(normalizedEmail);
+      if (!result) {
+        return res.status(404).json({ error: 'Email not found' });
       }
 
-      const email = getParentEmail(familyId, parentIndex);
-      if (!email) {
-        return res.status(400).json({ error: 'No email found for this parent' });
-      }
-
-      const settings: any = getSettings(familyId);
-      const name = parentIndex === 0 ? settings.parent1_name : settings.parent2_name;
-      const token = createMagicLink(familyId, parentIndex, email);
-      await sendMagicLinkEmail(email, token, name);
+      const { family, parentIndex } = result;
+      const name = parentIndex === 0 ? family.parent1_name : family.parent2_name;
+      const token = createMagicLink(family.family_id, parentIndex, normalizedEmail);
+      await sendMagicLinkEmail(normalizedEmail, token, name);
 
       res.json({ success: true });
     } catch (error: any) {

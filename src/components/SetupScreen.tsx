@@ -2,52 +2,55 @@ import React, { useState } from 'react';
 import { Moon } from 'lucide-react';
 
 interface SetupScreenProps {
-  familyId: string;
-  defaultParent1?: string;
-  defaultParent2?: string;
+  email: string;
   onComplete: () => void;
 }
 
-export function SetupScreen({ familyId, defaultParent1 = '', defaultParent2 = '', onComplete }: SetupScreenProps) {
-  const [p1, setP1] = useState(defaultParent1);
-  const [p1Email, setP1Email] = useState('');
-  const [p2, setP2] = useState(defaultParent2);
-  const [p2Email, setP2Email] = useState('');
+export function SetupScreen({ email, onComplete }: SetupScreenProps) {
+  const [myName, setMyName] = useState('');
+  const [partnerName, setPartnerName] = useState('');
+  const [partnerEmail, setPartnerEmail] = useState('');
   const [bedtime, setBedtime] = useState('22:00');
   const [wakeTime, setWakeTime] = useState('07:00');
   const [firstTurn, setFirstTurn] = useState(0);
-  const [actingParent, setActingParent] = useState(0); // which parent is setting up right now
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
-  const canSubmit = p1.trim() && p2.trim() && p1Email.trim() && p2Email.trim() && bedtime && wakeTime;
+  const canSubmit = myName.trim() && partnerName.trim() && partnerEmail.trim() && bedtime && wakeTime;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit || saving) return;
     setSaving(true);
+    setError('');
 
-    await fetch('/api/auth/setup', {
+    const res = await fetch('/api/auth/setup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        familyId,
-        parent1: p1.trim(),
-        parent1Email: p1Email.trim(),
-        parent2: p2.trim(),
-        parent2Email: p2Email.trim(),
+        email,
+        name: myName.trim(),
+        partnerName: partnerName.trim(),
+        partnerEmail: partnerEmail.trim(),
         bedtime,
         wakeTime,
-        firstTurnIndex: firstTurn,
-        actingParentIndex: actingParent
+        firstTurnIndex: firstTurn
       })
     });
+
+    if (!res.ok) {
+      const err = await res.json();
+      setError(err.error || 'Setup failed');
+      setSaving(false);
+      return;
+    }
 
     setSaving(false);
     onComplete();
   };
 
-  const firstName = p1.trim() || 'Parent 1';
-  const secondName = p2.trim() || 'Parent 2';
+  const firstName = myName.trim() || 'Me';
+  const secondName = partnerName.trim() || 'Partner';
 
   return (
     <div className="z-10 w-full max-w-md">
@@ -62,49 +65,44 @@ export function SetupScreen({ familyId, defaultParent1 = '', defaultParent2 = ''
       <form onSubmit={handleSubmit} className="bg-slate-900/60 border border-white/10 rounded-3xl p-8 backdrop-blur-md space-y-5 relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
 
+        {error && (
+          <div className="bg-red-500/20 border border-red-400/30 rounded-xl px-4 py-3 text-red-200 text-sm">
+            {error}
+          </div>
+        )}
+
         <div>
-          <label className="block text-xs font-medium text-indigo-300 uppercase tracking-wider mb-1">Parent 1 Name</label>
+          <label className="block text-xs font-medium text-indigo-300 uppercase tracking-wider mb-1">Your Name</label>
           <input
             type="text"
             placeholder="e.g. Alice"
-            value={p1}
-            onChange={(e) => setP1(e.target.value)}
+            value={myName}
+            onChange={(e) => setMyName(e.target.value)}
             required
+            autoFocus
             className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-indigo-300 uppercase tracking-wider mb-1">Parent 1 Email</label>
-          <input
-            type="email"
-            placeholder="alice@example.com"
-            value={p1Email}
-            onChange={(e) => setP1Email(e.target.value)}
-            required
-            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
-        </div>
-
-        <div>
-          <label className="block text-xs font-medium text-indigo-300 uppercase tracking-wider mb-1">Parent 2 Name</label>
+          <label className="block text-xs font-medium text-indigo-300 uppercase tracking-wider mb-1">Partner's Name</label>
           <input
             type="text"
             placeholder="e.g. Ben"
-            value={p2}
-            onChange={(e) => setP2(e.target.value)}
+            value={partnerName}
+            onChange={(e) => setPartnerName(e.target.value)}
             required
             className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-indigo-300 uppercase tracking-wider mb-1">Parent 2 Email</label>
+          <label className="block text-xs font-medium text-indigo-300 uppercase tracking-wider mb-1">Partner's Email</label>
           <input
             type="email"
             placeholder="ben@example.com"
-            value={p2Email}
-            onChange={(e) => setP2Email(e.target.value)}
+            value={partnerEmail}
+            onChange={(e) => setPartnerEmail(e.target.value)}
             required
             className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
@@ -152,34 +150,6 @@ export function SetupScreen({ familyId, defaultParent1 = '', defaultParent2 = ''
               className={`py-3 rounded-xl border font-medium transition-all ${
                 firstTurn === 1
                   ? 'bg-white/20 border-white/40 text-white'
-                  : 'bg-white/5 border-white/10 text-indigo-200 hover:bg-white/10'
-              }`}
-            >
-              {secondName}
-            </button>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-xs font-medium text-indigo-300 uppercase tracking-wider mb-2">Which parent are you?</label>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => setActingParent(0)}
-              className={`py-3 rounded-xl border font-medium transition-all ${
-                actingParent === 0
-                  ? 'bg-indigo-500/30 border-indigo-400/40 text-white'
-                  : 'bg-white/5 border-white/10 text-indigo-200 hover:bg-white/10'
-              }`}
-            >
-              {firstName}
-            </button>
-            <button
-              type="button"
-              onClick={() => setActingParent(1)}
-              className={`py-3 rounded-xl border font-medium transition-all ${
-                actingParent === 1
-                  ? 'bg-indigo-500/30 border-indigo-400/40 text-white'
                   : 'bg-white/5 border-white/10 text-indigo-200 hover:bg-white/10'
               }`}
             >

@@ -28,7 +28,7 @@ type AppState = {
 };
 
 type AuthStatus = 'loading' | 'unauthenticated' | 'check_email' | 'authenticated';
-type LoginStep = 'family' | 'setup' | 'select_parent' | 'check_email';
+type LoginStep = 'email' | 'setup' | 'check_email';
 
 function formatCountdownParts(minutes: number): { time: string; label: string } {
   if (minutes <= 0) return { time: 'Now', label: 'Bedtime!' };
@@ -88,12 +88,9 @@ export default function App() {
 
   // ─── Login flow state ─────────────────────────────────────────────────────
   const [loginInput, setLoginInput] = useState('');
-  const [loginStep, setLoginStep] = useState<LoginStep>('family');
-  const [familyInfo, setFamilyInfo] = useState<{ parent1Name: string; parent2Name: string } | null>(null);
+  const [loginStep, setLoginStep] = useState<LoginStep>('email');
   const [pendingEmail, setPendingEmail] = useState('');
   const [resendingLink, setResendingLink] = useState(false);
-  const [pendingFamilyId, setPendingFamilyId] = useState('');
-  const [pendingParentIndex, setPendingParentIndex] = useState(0);
 
   // Daytime countdown
   const [countdown, setCountdown] = useState<{ minutesToBedtime: number; progress: number } | null>(null);
@@ -280,56 +277,40 @@ export default function App() {
     setParentIndex(null);
     setState(null);
     setAuthStatus('unauthenticated');
-    setLoginStep('family');
+    setLoginStep('email');
     setLoginInput('');
-    setFamilyInfo(null);
   };
 
   // ─── Login flow handlers ──────────────────────────────────────────────────
 
-  const handleFamilySubmit = async (e: React.FormEvent) => {
+  const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!loginInput.trim()) return;
-    const id = loginInput.trim().toLowerCase().replace(/\s+/g, '-');
-    setPendingFamilyId(id);
+    const email = loginInput.trim().toLowerCase();
+    if (!email) return;
+    setPendingEmail(email);
 
     try {
-      const res = await fetch(`/api/auth/family-info?familyId=${encodeURIComponent(id)}`);
+      const res = await fetch('/api/auth/email-lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
       const data = await res.json();
-      setFamilyInfo({ parent1Name: data.parent1Name, parent2Name: data.parent2Name });
 
-      if (!data.isSetupComplete) {
-        setLoginStep('setup');
+      if (data.status === 'known') {
+        setLoginStep('check_email');
+        setAuthStatus('check_email');
       } else {
-        setLoginStep('select_parent');
+        setLoginStep('setup');
       }
     } catch (e) {
-      console.error('Error fetching family info:', e);
+      console.error('Error looking up email:', e);
     }
   };
 
   const handleSetupComplete = () => {
-    // SetupScreen calls /api/auth/setup which sends magic link
     setLoginStep('check_email');
-  };
-
-  const handleParentSelect = async (pIndex: number) => {
-    setPendingParentIndex(pIndex);
-    try {
-      const res = await fetch('/api/auth/request-link', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ familyId: pendingFamilyId, parentIndex: pIndex })
-      });
-      if (res.ok) {
-        setLoginStep('check_email');
-      } else {
-        const err = await res.json();
-        alert(err.error || 'Failed to send login link');
-      }
-    } catch (e) {
-      console.error('Error requesting link:', e);
-    }
+    setAuthStatus('check_email');
   };
 
   const handleResendLink = async () => {
@@ -338,7 +319,7 @@ export default function App() {
       await fetch('/api/auth/request-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ familyId: pendingFamilyId, parentIndex: pendingParentIndex })
+        body: JSON.stringify({ email: pendingEmail })
       });
     } catch (e) {
       console.error('Error resending link:', e);
@@ -375,7 +356,7 @@ export default function App() {
               </div>
               <h1 className="text-3xl font-bold mb-2">Check Your Email</h1>
               <p className="text-indigo-200 mb-8">
-                We sent you a sign-in link. Click the link in your email to continue.
+                We sent a sign-in link to <strong>{pendingEmail}</strong>. Click the link in your email to continue.
               </p>
               <div className="space-y-4">
                 <button
@@ -386,7 +367,7 @@ export default function App() {
                   {resendingLink ? 'Sending...' : 'Resend Link'}
                 </button>
                 <button
-                  onClick={() => { setLoginStep('family'); setAuthStatus('unauthenticated'); }}
+                  onClick={() => { setLoginStep('email'); setAuthStatus('unauthenticated'); }}
                   className="text-sm text-indigo-300 hover:text-white mt-4"
                 >
                   Back
@@ -397,46 +378,12 @@ export default function App() {
           ) : loginStep === 'setup' ? (
             // ─── Setup Screen ───────────────────────────────────────────
             <SetupScreen
-              familyId={pendingFamilyId}
-              defaultParent1={familyInfo?.parent1Name === 'Parent 1' ? '' : familyInfo?.parent1Name}
-              defaultParent2={familyInfo?.parent2Name === 'Parent 2' ? '' : familyInfo?.parent2Name}
+              email={pendingEmail}
               onComplete={handleSetupComplete}
             />
 
-          ) : loginStep === 'select_parent' ? (
-            // ─── Select Parent Screen ───────────────────────────────────
-            <>
-              <div className="mb-8 flex justify-center">
-                <div className="w-20 h-20 rounded-full bg-indigo-500/20 flex items-center justify-center backdrop-blur-sm border border-white/10">
-                  <Moon className="w-10 h-10 text-yellow-200 fill-yellow-200" />
-                </div>
-              </div>
-              <h1 className="text-4xl font-bold mb-2">StarTurn</h1>
-              <p className="text-indigo-200 mb-8">Who are you?</p>
-              <div className="space-y-4">
-                <button
-                  onClick={() => handleParentSelect(0)}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-6 py-4 text-center text-xl text-white hover:bg-white/20 transition-all"
-                >
-                  {familyInfo?.parent1Name || 'Parent 1'}
-                </button>
-                <button
-                  onClick={() => handleParentSelect(1)}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-6 py-4 text-center text-xl text-white hover:bg-white/20 transition-all"
-                >
-                  {familyInfo?.parent2Name || 'Parent 2'}
-                </button>
-                <button
-                  onClick={() => setLoginStep('family')}
-                  className="text-sm text-indigo-300 hover:text-white mt-4"
-                >
-                  Back
-                </button>
-              </div>
-            </>
-
           ) : (
-            // ─── Family Name Screen (with optional welcome back) ────────
+            // ─── Email Entry Screen ──────────────────────────────────────
             <>
               <div className="mb-8 flex justify-center">
                 <div className="w-20 h-20 rounded-full bg-indigo-500/20 flex items-center justify-center backdrop-blur-sm border border-white/10">
@@ -445,14 +392,14 @@ export default function App() {
               </div>
               <h1 className="text-4xl font-bold mb-2">StarTurn</h1>
               {savedName ? (
-                <p className="text-indigo-200 mb-8">Welcome back, {savedName}! Enter your family name to sign in.</p>
+                <p className="text-indigo-200 mb-8">Welcome back, {savedName}! Enter your email to sign in.</p>
               ) : (
-                <p className="text-indigo-200 mb-8">Enter your family name to sync your turns.</p>
+                <p className="text-indigo-200 mb-8">Enter your email to get started.</p>
               )}
-              <form onSubmit={handleFamilySubmit} className="space-y-4">
+              <form onSubmit={handleEmailSubmit} className="space-y-4">
                 <input
-                  type="text"
-                  placeholder="e.g. The Smiths"
+                  type="email"
+                  placeholder="you@example.com"
                   value={loginInput}
                   onChange={(e) => setLoginInput(e.target.value)}
                   className="w-full bg-white/10 border border-white/20 rounded-xl px-6 py-4 text-center text-xl text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-indigo-500 backdrop-blur-md transition-all"
@@ -462,7 +409,7 @@ export default function App() {
                   type="submit"
                   className="w-full bg-white text-slate-900 font-bold py-4 rounded-xl hover:bg-indigo-50 transition-colors shadow-lg shadow-indigo-500/20"
                 >
-                  Next
+                  Continue
                 </button>
               </form>
             </>
