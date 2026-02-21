@@ -10,29 +10,35 @@ interface SetupScreenProps {
 
 export function SetupScreen({ familyId, defaultParent1 = '', defaultParent2 = '', onComplete }: SetupScreenProps) {
   const [p1, setP1] = useState(defaultParent1);
+  const [p1Email, setP1Email] = useState('');
   const [p2, setP2] = useState(defaultParent2);
+  const [p2Email, setP2Email] = useState('');
   const [bedtime, setBedtime] = useState('22:00');
   const [wakeTime, setWakeTime] = useState('07:00');
-  const [firstTurn, setFirstTurn] = useState(0); // 0 = Parent 1, 1 = Parent 2
+  const [firstTurn, setFirstTurn] = useState(0);
+  const [actingParent, setActingParent] = useState(0); // which parent is setting up right now
   const [saving, setSaving] = useState(false);
 
-  const canSubmit = p1.trim() && p2.trim() && bedtime && wakeTime;
+  const canSubmit = p1.trim() && p2.trim() && p1Email.trim() && p2Email.trim() && bedtime && wakeTime;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit || saving) return;
     setSaving(true);
 
-    await fetch('/api/settings', {
+    await fetch('/api/auth/setup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         familyId,
         parent1: p1.trim(),
+        parent1Email: p1Email.trim(),
         parent2: p2.trim(),
+        parent2Email: p2Email.trim(),
         bedtime,
         wakeTime,
-        firstTurnIndex: firstTurn
+        firstTurnIndex: firstTurn,
+        actingParentIndex: actingParent
       })
     });
 
@@ -69,12 +75,36 @@ export function SetupScreen({ familyId, defaultParent1 = '', defaultParent2 = ''
         </div>
 
         <div>
+          <label className="block text-xs font-medium text-indigo-300 uppercase tracking-wider mb-1">Parent 1 Email</label>
+          <input
+            type="email"
+            placeholder="alice@example.com"
+            value={p1Email}
+            onChange={(e) => setP1Email(e.target.value)}
+            required
+            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+
+        <div>
           <label className="block text-xs font-medium text-indigo-300 uppercase tracking-wider mb-1">Parent 2 Name</label>
           <input
             type="text"
             placeholder="e.g. Ben"
             value={p2}
             onChange={(e) => setP2(e.target.value)}
+            required
+            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-indigo-300 uppercase tracking-wider mb-1">Parent 2 Email</label>
+          <input
+            type="email"
+            placeholder="ben@example.com"
+            value={p2Email}
+            onChange={(e) => setP2Email(e.target.value)}
             required
             className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
@@ -122,6 +152,34 @@ export function SetupScreen({ familyId, defaultParent1 = '', defaultParent2 = ''
               className={`py-3 rounded-xl border font-medium transition-all ${
                 firstTurn === 1
                   ? 'bg-white/20 border-white/40 text-white'
+                  : 'bg-white/5 border-white/10 text-indigo-200 hover:bg-white/10'
+              }`}
+            >
+              {secondName}
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-indigo-300 uppercase tracking-wider mb-2">Which parent are you?</label>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setActingParent(0)}
+              className={`py-3 rounded-xl border font-medium transition-all ${
+                actingParent === 0
+                  ? 'bg-indigo-500/30 border-indigo-400/40 text-white'
+                  : 'bg-white/5 border-white/10 text-indigo-200 hover:bg-white/10'
+              }`}
+            >
+              {firstName}
+            </button>
+            <button
+              type="button"
+              onClick={() => setActingParent(1)}
+              className={`py-3 rounded-xl border font-medium transition-all ${
+                actingParent === 1
+                  ? 'bg-indigo-500/30 border-indigo-400/40 text-white'
                   : 'bg-white/5 border-white/10 text-indigo-200 hover:bg-white/10'
               }`}
             >

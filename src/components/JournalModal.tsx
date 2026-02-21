@@ -17,7 +17,6 @@ interface Night {
 }
 
 interface JournalModalProps {
-  familyId: string;
   onClose: () => void;
 }
 
@@ -63,19 +62,19 @@ function TripRow({ trip, isFirst }: { trip: Trip; isFirst: boolean }) {
   );
 }
 
-export function JournalModal({ familyId, onClose }: JournalModalProps) {
+export function JournalModal({ onClose }: JournalModalProps) {
   const [nights, setNights] = useState<Night[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`/api/journal?familyId=${familyId}`)
+    fetch('/api/journal')
       .then(r => r.json())
       .then(data => {
         setNights(data.nights || []);
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [familyId]);
+  }, []);
 
   return (
     <motion.div

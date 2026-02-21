@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
-import { Settings, Moon, Check, Bell, Star, BookOpen } from 'lucide-react';
+import { Settings, Moon, Check, Bell, Star, BookOpen, Mail } from 'lucide-react';
 import { StarryBackground } from './components/StarryBackground';
 import { SetupScreen } from './components/SetupScreen';
 import { JournalModal } from './components/JournalModal';
@@ -27,6 +27,9 @@ type AppState = {
   currentNightDate: string;
 };
 
+type AuthStatus = 'loading' | 'unauthenticated' | 'check_email' | 'authenticated';
+type LoginStep = 'family' | 'setup' | 'select_parent' | 'check_email';
+
 function formatCountdownParts(minutes: number): { time: string; label: string } {
   if (minutes <= 0) return { time: 'Now', label: 'Bedtime!' };
   const h = Math.floor(minutes / 60);
@@ -43,7 +46,6 @@ function computeDaytimeProgress(now: Date, wakeTime: string, bedtime: string): {
   const wtMins = wtH * 60 + wtM;
   const btMins = btH * 60 + btM;
 
-  // Handle wraparound: bedtime might be numerically < wakeTime
   const totalDay = btMins >= wtMins
     ? btMins - wtMins
     : (1440 - wtMins) + btMins;
@@ -60,7 +62,6 @@ function computeDaytimeProgress(now: Date, wakeTime: string, bedtime: string): {
   return { minutesToBedtime: Math.max(0, minutesToBedtime), progress };
 }
 
-// Always computed client-side so timezone doesn't affect day/night determination
 function computeIsNight(now: Date, bedtime: string, wakeTime: string): boolean {
   const [btH, btM] = bedtime.split(':').map(Number);
   const [wtH, wtM] = wakeTime.split(':').map(Number);
@@ -71,43 +72,79 @@ function computeIsNight(now: Date, bedtime: string, wakeTime: string): boolean {
 }
 
 export default function App() {
-  const [familyId, setFamilyId] = useState<string | null>(() => localStorage.getItem('starturn_family_id'));
-  const [currentUser, setCurrentUser] = useState<string | null>(() => localStorage.getItem('starturn_current_user'));
+  // ─── Auth state ───────────────────────────────────────────────────────────
+  const [authStatus, setAuthStatus] = useState<AuthStatus>('loading');
+  const [familyId, setFamilyId] = useState<string | null>(null);
+  const [parentIndex, setParentIndex] = useState<number | null>(null);
+  const [currentUser, setCurrentUser] = useState<string | null>(null);
+  const [partnerName, setPartnerName] = useState<string | null>(null);
+
+  // ─── App state ────────────────────────────────────────────────────────────
   const [state, setState] = useState<AppState | null>(null);
-  const [loading, setLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showJournal, setShowJournal] = useState(false);
   const showSettingsRef = useRef(false);
   const [pushSupported, setPushSupported] = useState(false);
 
-  // Daytime countdown state (updates every minute)
+  // ─── Login flow state ─────────────────────────────────────────────────────
+  const [loginInput, setLoginInput] = useState('');
+  const [loginStep, setLoginStep] = useState<LoginStep>('family');
+  const [familyInfo, setFamilyInfo] = useState<{ parent1Name: string; parent2Name: string } | null>(null);
+  const [pendingEmail, setPendingEmail] = useState('');
+  const [resendingLink, setResendingLink] = useState(false);
+  const [pendingFamilyId, setPendingFamilyId] = useState('');
+  const [pendingParentIndex, setPendingParentIndex] = useState(0);
+
+  // Daytime countdown
   const [countdown, setCountdown] = useState<{ minutesToBedtime: number; progress: number } | null>(null);
 
-  // Keep ref in sync with state so polling always reads the latest value
-  useEffect(() => {
-    showSettingsRef.current = showSettings;
-  }, [showSettings]);
-
-  // Form state
+  // Form state for settings modal
   const [p1Name, setP1Name] = useState('');
   const [p2Name, setP2Name] = useState('');
   const [bedtime, setBedtime] = useState('');
   const [wakeTime, setWakeTime] = useState('');
-  const [loginInput, setLoginInput] = useState('');
-  const [loginStep, setLoginStep] = useState<'family' | 'setup' | 'user'>('family');
 
+  // Keep ref in sync
   useEffect(() => {
-    if (familyId) {
-      fetchState(familyId);
-      const interval = setInterval(() => fetchState(familyId), 3000);
-      return () => clearInterval(interval);
-    }
+    showSettingsRef.current = showSettings;
+  }, [showSettings]);
+
+  // ─── Check auth on load ───────────────────────────────────────────────────
+  useEffect(() => {
+    checkAuth();
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       setPushSupported(true);
     }
-  }, [familyId]);
+  }, []);
 
-  // Update countdown every minute during daytime
+  const checkAuth = async () => {
+    try {
+      const res = await fetch('/api/auth/me');
+      if (res.ok) {
+        const data = await res.json();
+        setFamilyId(data.familyId);
+        setParentIndex(data.parentIndex);
+        setCurrentUser(data.parentName);
+        setPartnerName(data.partnerName);
+        localStorage.setItem('starturn_parent_name', data.parentName);
+        setAuthStatus('authenticated');
+      } else {
+        setAuthStatus('unauthenticated');
+      }
+    } catch {
+      setAuthStatus('unauthenticated');
+    }
+  };
+
+  // ─── Poll state when authenticated ────────────────────────────────────────
+  useEffect(() => {
+    if (authStatus !== 'authenticated') return;
+    fetchState();
+    const interval = setInterval(fetchState, 3000);
+    return () => clearInterval(interval);
+  }, [authStatus]);
+
+  // ─── Countdown timer ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!state) {
       setCountdown(null);
@@ -125,11 +162,17 @@ export default function App() {
     updateCountdown();
     const interval = setInterval(updateCountdown, 60000);
     return () => clearInterval(interval);
-  }, [state?.nightMode, state?.settings.bedtime, state?.settings.wake_time]);
+  }, [state?.settings.bedtime, state?.settings.wake_time]);
 
-  const fetchState = async (fid: string): Promise<AppState | null> => {
+  // ─── API helpers (no familyId in params — server derives from cookie) ─────
+
+  const fetchState = async (): Promise<AppState | null> => {
     try {
-      const res = await fetch(`/api/state?familyId=${fid}`);
+      const res = await fetch('/api/state');
+      if (res.status === 401) {
+        setAuthStatus('unauthenticated');
+        return null;
+      }
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data: AppState = await res.json();
       setState(data);
@@ -146,45 +189,8 @@ export default function App() {
     }
   };
 
-  const handleFamilySubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!loginInput.trim()) return;
-    const id = loginInput.trim().toLowerCase().replace(/\s+/g, '-');
-    fetchState(id).then((data) => {
-      if (data && data.settings.is_setup_complete === 0) {
-        setLoginStep('setup');
-      } else {
-        setLoginStep('user');
-      }
-    });
-  };
-
-  const handleSetupComplete = async () => {
-    const id = loginInput.trim().toLowerCase().replace(/\s+/g, '-');
-    await fetchState(id);
-    setLoginStep('user');
-  };
-
-  const handleUserSelect = (name: string) => {
-    const id = loginInput.trim().toLowerCase().replace(/\s+/g, '-');
-    localStorage.setItem('starturn_family_id', id);
-    localStorage.setItem('starturn_current_user', name);
-    setFamilyId(id);
-    setCurrentUser(name);
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('starturn_family_id');
-    localStorage.removeItem('starturn_current_user');
-    setFamilyId(null);
-    setCurrentUser(null);
-    setState(null);
-    setLoginStep('family');
-    setLoginInput('');
-  };
-
   const handleCompleteTurn = async () => {
-    if (!state || !familyId) return;
+    if (!state) return;
     const currentParent = state.settings.current_turn_index === 0
       ? state.settings.parent1_name
       : state.settings.parent2_name;
@@ -199,28 +205,27 @@ export default function App() {
     await fetch('/api/complete-turn', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ familyId, parentName: currentParent })
+      body: JSON.stringify({})
     });
 
-    fetchState(familyId);
+    fetchState();
   };
 
   const handleOverrideTurn = async (actionType: 'skip' | 'takeover') => {
-    if (!state || !familyId || !currentUser) return;
+    if (!state) return;
     await fetch('/api/override-turn', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ familyId, actingParent: currentUser, actionType })
+      body: JSON.stringify({ actionType })
     });
-    fetchState(familyId);
+    fetchState();
   };
 
   const saveSettings = async () => {
-    if (!familyId) return;
     const response = await fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ familyId, parent1: p1Name, parent2: p2Name, bedtime, wakeTime })
+      body: JSON.stringify({ parent1: p1Name, parent2: p2Name, bedtime, wakeTime })
     });
 
     if (!response.ok) {
@@ -228,29 +233,14 @@ export default function App() {
       return;
     }
 
-    if (currentUser === state?.settings.parent1_name && p1Name !== currentUser) {
-      setCurrentUser(p1Name);
-      localStorage.setItem('starturn_current_user', p1Name);
-    } else if (currentUser === state?.settings.parent2_name && p2Name !== currentUser) {
-      setCurrentUser(p2Name);
-      localStorage.setItem('starturn_current_user', p2Name);
-    }
-
-    const stateRes = await fetch(`/api/state?familyId=${familyId}`);
-    if (stateRes.ok) {
-      const data = await stateRes.json();
-      setState(data);
-      setP1Name(data.settings.parent1_name);
-      setP2Name(data.settings.parent2_name);
-      setBedtime(data.settings.bedtime);
-      setWakeTime(data.settings.wake_time || '07:00');
-    }
-
+    // Re-check auth to get updated names
+    await checkAuth();
+    await fetchState();
     setShowSettings(false);
   };
 
   const subscribeToPush = async () => {
-    if (!pushSupported || !familyId) return;
+    if (!pushSupported) return;
     if (Notification.permission === 'denied') {
       alert('Notifications are blocked. Please enable them in your browser settings.');
       return;
@@ -272,7 +262,7 @@ export default function App() {
       await fetch('/api/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ familyId, subscription })
+        body: JSON.stringify({ subscription })
       });
       alert('Notifications enabled! You will be notified when a turn is completed.');
     } catch (e: any) {
@@ -281,22 +271,140 @@ export default function App() {
     }
   };
 
-  // ─── Login / Setup screens ───────────────────────────────────────────────
-  if (!familyId || !currentUser) {
-    const pendingFamilyId = loginInput.trim().toLowerCase().replace(/\s+/g, '-');
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    localStorage.removeItem('starturn_parent_name');
+    setFamilyId(null);
+    setCurrentUser(null);
+    setPartnerName(null);
+    setParentIndex(null);
+    setState(null);
+    setAuthStatus('unauthenticated');
+    setLoginStep('family');
+    setLoginInput('');
+    setFamilyInfo(null);
+  };
+
+  // ─── Login flow handlers ──────────────────────────────────────────────────
+
+  const handleFamilySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginInput.trim()) return;
+    const id = loginInput.trim().toLowerCase().replace(/\s+/g, '-');
+    setPendingFamilyId(id);
+
+    try {
+      const res = await fetch(`/api/auth/family-info?familyId=${encodeURIComponent(id)}`);
+      const data = await res.json();
+      setFamilyInfo({ parent1Name: data.parent1Name, parent2Name: data.parent2Name });
+
+      if (!data.isSetupComplete) {
+        setLoginStep('setup');
+      } else {
+        setLoginStep('select_parent');
+      }
+    } catch (e) {
+      console.error('Error fetching family info:', e);
+    }
+  };
+
+  const handleSetupComplete = () => {
+    // SetupScreen calls /api/auth/setup which sends magic link
+    setLoginStep('check_email');
+  };
+
+  const handleParentSelect = async (pIndex: number) => {
+    setPendingParentIndex(pIndex);
+    try {
+      const res = await fetch('/api/auth/request-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ familyId: pendingFamilyId, parentIndex: pIndex })
+      });
+      if (res.ok) {
+        setLoginStep('check_email');
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Failed to send login link');
+      }
+    } catch (e) {
+      console.error('Error requesting link:', e);
+    }
+  };
+
+  const handleResendLink = async () => {
+    setResendingLink(true);
+    try {
+      await fetch('/api/auth/request-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ familyId: pendingFamilyId, parentIndex: pendingParentIndex })
+      });
+    } catch (e) {
+      console.error('Error resending link:', e);
+    }
+    setResendingLink(false);
+  };
+
+  // ─── Loading screen ───────────────────────────────────────────────────────
+  if (authStatus === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">
+        <StarryBackground />
+        <div className="animate-pulse">Loading StarTurn...</div>
+      </div>
+    );
+  }
+
+  // ─── Login / Setup screens ────────────────────────────────────────────────
+  if (authStatus === 'unauthenticated' || authStatus === 'check_email') {
+    const savedName = localStorage.getItem('starturn_parent_name');
+
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-white p-6 relative overflow-hidden">
         <StarryBackground />
         <div className="z-10 w-full max-w-md text-center">
 
-          {loginStep === 'setup' ? (
+          {loginStep === 'check_email' ? (
+            // ─── Check Email Screen ─────────────────────────────────────
+            <>
+              <div className="mb-8 flex justify-center">
+                <div className="w-20 h-20 rounded-full bg-indigo-500/20 flex items-center justify-center backdrop-blur-sm border border-white/10">
+                  <Mail className="w-10 h-10 text-indigo-300" />
+                </div>
+              </div>
+              <h1 className="text-3xl font-bold mb-2">Check Your Email</h1>
+              <p className="text-indigo-200 mb-8">
+                We sent you a sign-in link. Click the link in your email to continue.
+              </p>
+              <div className="space-y-4">
+                <button
+                  onClick={handleResendLink}
+                  disabled={resendingLink}
+                  className="w-full py-3 rounded-xl border border-indigo-500/30 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 transition-colors text-sm font-medium disabled:opacity-40"
+                >
+                  {resendingLink ? 'Sending...' : 'Resend Link'}
+                </button>
+                <button
+                  onClick={() => { setLoginStep('family'); setAuthStatus('unauthenticated'); }}
+                  className="text-sm text-indigo-300 hover:text-white mt-4"
+                >
+                  Back
+                </button>
+              </div>
+            </>
+
+          ) : loginStep === 'setup' ? (
+            // ─── Setup Screen ───────────────────────────────────────────
             <SetupScreen
               familyId={pendingFamilyId}
-              defaultParent1={state?.settings.parent1_name === 'Parent 1' ? '' : state?.settings.parent1_name}
-              defaultParent2={state?.settings.parent2_name === 'Parent 2' ? '' : state?.settings.parent2_name}
+              defaultParent1={familyInfo?.parent1Name === 'Parent 1' ? '' : familyInfo?.parent1Name}
+              defaultParent2={familyInfo?.parent2Name === 'Parent 2' ? '' : familyInfo?.parent2Name}
               onComplete={handleSetupComplete}
             />
-          ) : loginStep === 'family' ? (
+
+          ) : loginStep === 'select_parent' ? (
+            // ─── Select Parent Screen ───────────────────────────────────
             <>
               <div className="mb-8 flex justify-center">
                 <div className="w-20 h-20 rounded-full bg-indigo-500/20 flex items-center justify-center backdrop-blur-sm border border-white/10">
@@ -304,7 +412,43 @@ export default function App() {
                 </div>
               </div>
               <h1 className="text-4xl font-bold mb-2">StarTurn</h1>
-              <p className="text-indigo-200 mb-8">Enter your family name to sync your turns.</p>
+              <p className="text-indigo-200 mb-8">Who are you?</p>
+              <div className="space-y-4">
+                <button
+                  onClick={() => handleParentSelect(0)}
+                  className="w-full bg-white/10 border border-white/20 rounded-xl px-6 py-4 text-center text-xl text-white hover:bg-white/20 transition-all"
+                >
+                  {familyInfo?.parent1Name || 'Parent 1'}
+                </button>
+                <button
+                  onClick={() => handleParentSelect(1)}
+                  className="w-full bg-white/10 border border-white/20 rounded-xl px-6 py-4 text-center text-xl text-white hover:bg-white/20 transition-all"
+                >
+                  {familyInfo?.parent2Name || 'Parent 2'}
+                </button>
+                <button
+                  onClick={() => setLoginStep('family')}
+                  className="text-sm text-indigo-300 hover:text-white mt-4"
+                >
+                  Back
+                </button>
+              </div>
+            </>
+
+          ) : (
+            // ─── Family Name Screen (with optional welcome back) ────────
+            <>
+              <div className="mb-8 flex justify-center">
+                <div className="w-20 h-20 rounded-full bg-indigo-500/20 flex items-center justify-center backdrop-blur-sm border border-white/10">
+                  <Moon className="w-10 h-10 text-yellow-200 fill-yellow-200" />
+                </div>
+              </div>
+              <h1 className="text-4xl font-bold mb-2">StarTurn</h1>
+              {savedName ? (
+                <p className="text-indigo-200 mb-8">Welcome back, {savedName}! Enter your family name to sign in.</p>
+              ) : (
+                <p className="text-indigo-200 mb-8">Enter your family name to sync your turns.</p>
+              )}
               <form onSubmit={handleFamilySubmit} className="space-y-4">
                 <input
                   type="text"
@@ -322,43 +466,14 @@ export default function App() {
                 </button>
               </form>
             </>
-          ) : (
-            <>
-              <div className="mb-8 flex justify-center">
-                <div className="w-20 h-20 rounded-full bg-indigo-500/20 flex items-center justify-center backdrop-blur-sm border border-white/10">
-                  <Moon className="w-10 h-10 text-yellow-200 fill-yellow-200" />
-                </div>
-              </div>
-              <h1 className="text-4xl font-bold mb-2">StarTurn</h1>
-              <p className="text-indigo-200 mb-8">Who are you?</p>
-              <div className="space-y-4">
-                <button
-                  onClick={() => handleUserSelect(state?.settings.parent1_name || 'Parent 1')}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-6 py-4 text-center text-xl text-white hover:bg-white/20 transition-all"
-                >
-                  {state?.settings.parent1_name || 'Parent 1'}
-                </button>
-                <button
-                  onClick={() => handleUserSelect(state?.settings.parent2_name || 'Parent 2')}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-6 py-4 text-center text-xl text-white hover:bg-white/20 transition-all"
-                >
-                  {state?.settings.parent2_name || 'Parent 2'}
-                </button>
-                <button
-                  onClick={() => setLoginStep('family')}
-                  className="text-sm text-indigo-300 hover:text-white mt-4"
-                >
-                  Back
-                </button>
-              </div>
-            </>
           )}
         </div>
       </div>
     );
   }
 
-  if (loading || !state) {
+  // ─── Loading state (authenticated but no data yet) ────────────────────────
+  if (!state) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">
         <StarryBackground />
@@ -367,11 +482,12 @@ export default function App() {
     );
   }
 
+  // ─── Main Dashboard ───────────────────────────────────────────────────────
+
   const currentTurnParent = state.settings.current_turn_index === 0
     ? state.settings.parent1_name
     : state.settings.parent2_name;
   const isMyTurn = currentUser === currentTurnParent;
-  // Use client local time — server uses UTC which breaks timezone-dependent day/night logic
   const isNight = computeIsNight(new Date(), state.settings.bedtime, state.settings.wake_time || '07:00');
 
   // Countdown arc geometry
@@ -382,7 +498,7 @@ export default function App() {
   const arcProgress = countdown?.progress ?? 0;
   const arcDashoffset = arcCircumference * (1 - arcProgress);
 
-  // Sparkle positions (deterministic, spread around the circle)
+  // Sparkle positions
   const sparkles = [
     { top: '8%', left: '25%', size: 4, delay: 0 },
     { top: '15%', left: '72%', size: 3, delay: 0.5 },
@@ -391,7 +507,6 @@ export default function App() {
     { top: '80%', left: '18%', size: 3, delay: 0.8 },
   ];
 
-  // Countdown display parts
   const countdownParts = countdown ? formatCountdownParts(countdown.minutesToBedtime) : null;
   const tonightParent = state.tonightFirstParent || state.settings.parent1_name;
 
@@ -464,7 +579,6 @@ export default function App() {
                 {isMyTurn ? (
                   // ─── YOUR TURN: "Star Guardian" ─────────────────────────────
                   <>
-                    {/* Soft glow ring */}
                     <svg
                       width="288"
                       height="288"
@@ -497,7 +611,6 @@ export default function App() {
                 ) : (
                   // ─── RESTING: "Cozy Rest" ───────────────────────────────────
                   <>
-                    {/* Dim muted ring */}
                     <svg
                       width="288"
                       height="288"
@@ -519,7 +632,6 @@ export default function App() {
                         background: 'radial-gradient(circle at 50% 50%, rgba(30,41,59,0.6), rgba(49,46,129,0.4))',
                       }}
                     >
-                      {/* Floating z's */}
                       {[0, 1, 2].map((i) => (
                         <motion.span
                           key={i}
@@ -594,7 +706,6 @@ export default function App() {
               </div>
 
               <div className="relative mb-6">
-                {/* Sparkle dots — fade in as bedtime approaches */}
                 {sparkles.map((s, i) => (
                   <motion.div
                     key={i}
@@ -626,7 +737,6 @@ export default function App() {
                       <stop offset="100%" stopColor="rgba(251,191,36,0.7)" />
                     </linearGradient>
                   </defs>
-                  {/* Background ring */}
                   <circle
                     cx={arcCX}
                     cy={arcCY}
@@ -635,7 +745,6 @@ export default function App() {
                     stroke="rgba(99,102,241,0.15)"
                     strokeWidth="5"
                   />
-                  {/* Progress arc */}
                   <circle
                     cx={arcCX}
                     cy={arcCY}
@@ -650,7 +759,6 @@ export default function App() {
                   />
                 </svg>
 
-                {/* Circle with gradient that shifts warm near bedtime */}
                 <div
                   className="relative w-64 h-64 rounded-full border border-white/10 backdrop-blur-md flex items-center justify-center shadow-2xl overflow-hidden"
                   style={{
@@ -790,8 +898,8 @@ export default function App() {
 
       {/* Journal Modal */}
       <AnimatePresence>
-        {showJournal && familyId && (
-          <JournalModal familyId={familyId} onClose={() => setShowJournal(false)} />
+        {showJournal && (
+          <JournalModal onClose={() => setShowJournal(false)} />
         )}
       </AnimatePresence>
     </div>
