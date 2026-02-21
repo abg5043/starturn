@@ -60,6 +60,16 @@ function computeDaytimeProgress(now: Date, wakeTime: string, bedtime: string): {
   return { minutesToBedtime: Math.max(0, minutesToBedtime), progress };
 }
 
+// Always computed client-side so timezone doesn't affect day/night determination
+function computeIsNight(now: Date, bedtime: string, wakeTime: string): boolean {
+  const [btH, btM] = bedtime.split(':').map(Number);
+  const [wtH, wtM] = wakeTime.split(':').map(Number);
+  const totalMins = now.getHours() * 60 + now.getMinutes();
+  const btMins = btH * 60 + btM;
+  const wtMins = wtH * 60 + wtM;
+  return totalMins >= btMins || totalMins < wtMins;
+}
+
 export default function App() {
   const [familyId, setFamilyId] = useState<string | null>(() => localStorage.getItem('starturn_family_id'));
   const [currentUser, setCurrentUser] = useState<string | null>(() => localStorage.getItem('starturn_current_user'));
@@ -99,13 +109,17 @@ export default function App() {
 
   // Update countdown every minute during daytime
   useEffect(() => {
-    if (!state || state.nightMode) {
+    if (!state) {
+      setCountdown(null);
+      return;
+    }
+    const bt = state.settings.bedtime;
+    const wt = state.settings.wake_time || '07:00';
+    if (computeIsNight(new Date(), bt, wt)) {
       setCountdown(null);
       return;
     }
     const updateCountdown = () => {
-      const wt = state.settings.wake_time || '07:00';
-      const bt = state.settings.bedtime;
       setCountdown(computeDaytimeProgress(new Date(), wt, bt));
     };
     updateCountdown();
@@ -357,7 +371,8 @@ export default function App() {
     ? state.settings.parent1_name
     : state.settings.parent2_name;
   const isMyTurn = currentUser === currentTurnParent;
-  const isNight = state.nightMode;
+  // Use client local time — server uses UTC which breaks timezone-dependent day/night logic
+  const isNight = computeIsNight(new Date(), state.settings.bedtime, state.settings.wake_time || '07:00');
 
   // Countdown arc geometry
   const arcRadius = 136;
