@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
-import { Settings, Moon, Check, Bell, User, BookOpen } from 'lucide-react';
+import { Settings, Moon, Check, Bell, Star, BookOpen } from 'lucide-react';
 import { StarryBackground } from './components/StarryBackground';
 import { SetupScreen } from './components/SetupScreen';
 import { JournalModal } from './components/JournalModal';
@@ -27,13 +27,13 @@ type AppState = {
   currentNightDate: string;
 };
 
-function formatCountdown(minutes: number): string {
-  if (minutes <= 0) return 'Bedtime soon!';
+function formatCountdownParts(minutes: number): { time: string; label: string } {
+  if (minutes <= 0) return { time: 'Now', label: 'Bedtime!' };
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
-  if (h > 0 && m > 0) return `${h}h ${m}m to bedtime`;
-  if (h > 0) return `${h}h to bedtime`;
-  return `${m}m to bedtime`;
+  if (h > 0 && m > 0) return { time: `${h}h ${m}m`, label: 'to bedtime' };
+  if (h > 0) return { time: `${h}h`, label: 'to bedtime' };
+  return { time: `${m}m`, label: 'to bedtime' };
 }
 
 function computeDaytimeProgress(now: Date, wakeTime: string, bedtime: string): { minutesToBedtime: number; progress: number } {
@@ -42,11 +42,22 @@ function computeDaytimeProgress(now: Date, wakeTime: string, bedtime: string): {
   const nowMins = now.getHours() * 60 + now.getMinutes();
   const wtMins = wtH * 60 + wtM;
   const btMins = btH * 60 + btM;
-  const totalDay = Math.max(1, btMins - wtMins);
-  const elapsed = nowMins - wtMins;
-  const minutesToBedtime = Math.max(0, btMins - nowMins);
-  const progress = Math.max(0, Math.min(1, elapsed / totalDay));
-  return { minutesToBedtime, progress };
+
+  // Handle wraparound: bedtime might be numerically < wakeTime
+  const totalDay = btMins >= wtMins
+    ? btMins - wtMins
+    : (1440 - wtMins) + btMins;
+
+  const elapsed = nowMins >= wtMins
+    ? nowMins - wtMins
+    : (1440 - wtMins) + nowMins;
+
+  const minutesToBedtime = btMins >= nowMins
+    ? btMins - nowMins
+    : (1440 - nowMins) + btMins;
+
+  const progress = totalDay > 0 ? Math.max(0, Math.min(1, elapsed / totalDay)) : 0;
+  return { minutesToBedtime: Math.max(0, minutesToBedtime), progress };
 }
 
 export default function App() {
@@ -356,6 +367,19 @@ export default function App() {
   const arcProgress = countdown?.progress ?? 0;
   const arcDashoffset = arcCircumference * (1 - arcProgress);
 
+  // Sparkle positions (deterministic, spread around the circle)
+  const sparkles = [
+    { top: '8%', left: '25%', size: 4, delay: 0 },
+    { top: '15%', left: '72%', size: 3, delay: 0.5 },
+    { top: '45%', left: '5%', size: 3.5, delay: 1.0 },
+    { top: '50%', left: '92%', size: 4, delay: 1.5 },
+    { top: '80%', left: '18%', size: 3, delay: 0.8 },
+  ];
+
+  // Countdown display parts
+  const countdownParts = countdown ? formatCountdownParts(countdown.minutesToBedtime) : null;
+  const tonightParent = state.tonightFirstParent || state.settings.parent1_name;
+
   return (
     <div className="min-h-screen text-white font-sans overflow-hidden relative selection:bg-indigo-500/30">
       <StarryBackground />
@@ -403,37 +427,108 @@ export default function App() {
               </div>
 
               <div className="relative mb-8">
-                <div className="relative w-64 h-64 rounded-full bg-slate-900/50 border border-white/10 backdrop-blur-md flex items-center justify-center shadow-2xl overflow-hidden">
-                  {isMyTurn ? (
-                    <div className="text-center px-4 z-10">
-                      <User className="w-16 h-16 mx-auto mb-4 text-indigo-300" />
-                      <h1 className="text-3xl font-bold text-white mb-2 leading-tight">
-                        {currentUser},<br/>it's your turn to rise
-                      </h1>
-                    </div>
-                  ) : (
-                    <>
-                      <motion.div
-                        animate={{ rotate: 360 }}
-                        transition={{ duration: 60, repeat: Infinity, ease: "linear" }}
-                        className="absolute inset-0 w-full h-full"
-                      >
-                        <img
-                          src="https://picsum.photos/seed/dreamy/400/400?blur=1"
-                          alt="Resting"
-                          className="w-full h-full object-cover opacity-60"
-                          referrerPolicy="no-referrer"
-                        />
-                      </motion.div>
-                      <div className="relative z-10 text-center px-4">
-                        <Moon className="w-12 h-12 mx-auto mb-3 text-indigo-200 drop-shadow-lg" />
-                        <h1 className="text-2xl font-bold text-white mb-2 leading-tight drop-shadow-md">
-                          Rest now, {currentUser}.<br/>It's {currentTurnParent}'s turn.
+                {/* Sparkle dots around circle */}
+                {sparkles.map((s, i) => (
+                  <motion.div
+                    key={i}
+                    className="absolute rounded-full bg-yellow-200"
+                    style={{
+                      top: s.top,
+                      left: s.left,
+                      width: s.size,
+                      height: s.size,
+                    }}
+                    animate={{
+                      opacity: [0.2, 0.7, 0.2],
+                      scale: [0.8, 1.3, 0.8],
+                    }}
+                    transition={{ duration: 2.5 + s.delay, repeat: Infinity, ease: 'easeInOut' }}
+                  />
+                ))}
+
+                {isMyTurn ? (
+                  // ─── YOUR TURN: "Star Guardian" ─────────────────────────────
+                  <>
+                    {/* Soft glow ring */}
+                    <svg
+                      width="288"
+                      height="288"
+                      className="absolute -top-4 -left-4"
+                      style={{ pointerEvents: 'none' }}
+                    >
+                      <circle
+                        cx={arcCX}
+                        cy={arcCY}
+                        r={arcRadius}
+                        fill="none"
+                        stroke="rgba(255,255,255,0.12)"
+                        strokeWidth="4"
+                      />
+                    </svg>
+                    <div
+                      className="relative w-64 h-64 rounded-full border border-white/10 backdrop-blur-md flex items-center justify-center shadow-2xl overflow-hidden"
+                      style={{
+                        background: 'radial-gradient(circle at 40% 40%, rgba(79,70,229,0.3), rgba(126,34,206,0.25))',
+                      }}
+                    >
+                      <div className="text-center px-4 z-10">
+                        <Star className="w-14 h-14 mx-auto mb-3 text-yellow-200 fill-yellow-200 drop-shadow-lg" />
+                        <h1 className="text-2xl font-bold text-white leading-tight">
+                          Time to shine,<br/>{currentUser}!
                         </h1>
                       </div>
-                    </>
-                  )}
-                </div>
+                    </div>
+                  </>
+                ) : (
+                  // ─── RESTING: "Cozy Rest" ───────────────────────────────────
+                  <>
+                    {/* Dim muted ring */}
+                    <svg
+                      width="288"
+                      height="288"
+                      className="absolute -top-4 -left-4"
+                      style={{ pointerEvents: 'none' }}
+                    >
+                      <circle
+                        cx={arcCX}
+                        cy={arcCY}
+                        r={arcRadius}
+                        fill="none"
+                        stroke="rgba(99,102,241,0.08)"
+                        strokeWidth="3"
+                      />
+                    </svg>
+                    <div
+                      className="relative w-64 h-64 rounded-full border border-white/10 backdrop-blur-md flex items-center justify-center shadow-2xl overflow-hidden"
+                      style={{
+                        background: 'radial-gradient(circle at 50% 50%, rgba(30,41,59,0.6), rgba(49,46,129,0.4))',
+                      }}
+                    >
+                      {/* Floating z's */}
+                      {[0, 1, 2].map((i) => (
+                        <motion.span
+                          key={i}
+                          className="absolute text-indigo-300/40 font-bold select-none"
+                          style={{
+                            left: `${55 + i * 7}%`,
+                            top: `${32 - i * 8}%`,
+                            fontSize: `${12 + i * 4}px`,
+                          }}
+                          animate={{ y: [0, -15], opacity: [0.5, 0] }}
+                          transition={{ duration: 2, repeat: Infinity, delay: i * 0.6, ease: 'easeOut' }}
+                        >
+                          z
+                        </motion.span>
+                      ))}
+                      <div className="relative z-10 text-center px-4">
+                        <Moon className="w-12 h-12 mx-auto mb-3 text-yellow-200 fill-yellow-200 drop-shadow-lg" />
+                        <h1 className="text-2xl font-bold text-white leading-tight">
+                          Sweet dreams,<br/>{currentUser}
+                        </h1>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Primary action + override */}
@@ -456,8 +551,8 @@ export default function App() {
                   </>
                 ) : (
                   <>
-                    <div className="text-indigo-300/50 text-sm italic">
-                      Waiting for {currentTurnParent}...
+                    <div className="text-indigo-200/60 text-sm font-medium">
+                      {currentTurnParent} is on duty
                     </div>
                     <button
                       onClick={() => handleOverrideTurn('takeover')}
@@ -470,7 +565,7 @@ export default function App() {
               </div>
             </motion.div>
           ) : (
-            // ─── DAYTIME MODE ──────────────────────────────────────────────
+            // ─── DAYTIME MODE — "Sunset Dial" ──────────────────────────────
             <motion.div
               key="daytime"
               initial={{ opacity: 0, y: 10 }}
@@ -484,21 +579,46 @@ export default function App() {
               </div>
 
               <div className="relative mb-6">
-                {/* Countdown arc (SVG ring around the circle) */}
+                {/* Sparkle dots — fade in as bedtime approaches */}
+                {sparkles.map((s, i) => (
+                  <motion.div
+                    key={i}
+                    className="absolute rounded-full bg-yellow-200"
+                    style={{
+                      top: s.top,
+                      left: s.left,
+                      width: s.size,
+                      height: s.size,
+                    }}
+                    animate={{
+                      opacity: [arcProgress * 0.2, arcProgress * 0.7, arcProgress * 0.2],
+                      scale: [0.8, 1.2, 0.8],
+                    }}
+                    transition={{ duration: 2.5 + s.delay, repeat: Infinity, ease: 'easeInOut' }}
+                  />
+                ))}
+
+                {/* Progress ring (SVG) */}
                 <svg
                   width="288"
                   height="288"
                   className="absolute -top-4 -left-4 rotate-[-90deg]"
                   style={{ pointerEvents: 'none' }}
                 >
+                  <defs>
+                    <linearGradient id="ring-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor="rgba(129,140,248,0.7)" />
+                      <stop offset="100%" stopColor="rgba(251,191,36,0.7)" />
+                    </linearGradient>
+                  </defs>
                   {/* Background ring */}
                   <circle
                     cx={arcCX}
                     cy={arcCY}
                     r={arcRadius}
                     fill="none"
-                    stroke="rgba(99,102,241,0.12)"
-                    strokeWidth="3"
+                    stroke="rgba(99,102,241,0.15)"
+                    strokeWidth="5"
                   />
                   {/* Progress arc */}
                   <circle
@@ -506,8 +626,8 @@ export default function App() {
                     cy={arcCY}
                     r={arcRadius}
                     fill="none"
-                    stroke="rgba(165,180,252,0.55)"
-                    strokeWidth="3"
+                    stroke="url(#ring-grad)"
+                    strokeWidth="5"
                     strokeLinecap="round"
                     strokeDasharray={arcCircumference}
                     strokeDashoffset={arcDashoffset}
@@ -515,22 +635,42 @@ export default function App() {
                   />
                 </svg>
 
-                <div className="relative w-64 h-64 rounded-full bg-slate-900/50 border border-white/10 backdrop-blur-md flex items-center justify-center shadow-2xl">
+                {/* Circle with gradient that shifts warm near bedtime */}
+                <div
+                  className="relative w-64 h-64 rounded-full border border-white/10 backdrop-blur-md flex items-center justify-center shadow-2xl overflow-hidden"
+                  style={{
+                    background: arcProgress < 0.5
+                      ? `radial-gradient(circle at 40% 40%, rgba(56,189,248,${0.15 + arcProgress * 0.1}), rgba(99,102,241,${0.2 + arcProgress * 0.1}))`
+                      : `radial-gradient(circle at 40% 40%, rgba(251,191,36,${(arcProgress - 0.5) * 0.3}), rgba(234,88,12,${(arcProgress - 0.5) * 0.2}), rgba(99,102,241,0.2))`,
+                  }}
+                >
                   <div className="text-center px-4">
-                    <Moon className="w-14 h-14 mx-auto mb-4 text-indigo-300" />
-                    <h1 className="text-2xl font-bold text-white leading-tight">
-                      {state.tonightFirstParent === currentUser
-                        ? <>You're up<br/>first tonight</>
-                        : <>{state.tonightFirstParent || state.settings.parent1_name}<br/>goes first tonight</>
-                      }
-                    </h1>
+                    {countdownParts ? (
+                      <>
+                        <h1 className="text-5xl font-bold text-white leading-none mb-1">
+                          {countdownParts.time}
+                        </h1>
+                        <p className="text-lg text-indigo-200">{countdownParts.label}</p>
+                      </>
+                    ) : (
+                      <>
+                        <Moon className="w-12 h-12 mx-auto mb-3 text-indigo-300" />
+                        <p className="text-lg text-indigo-200">Night starts at {state.settings.bedtime}</p>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/* Countdown text */}
-              <div className="text-indigo-300/60 text-sm mt-1">
-                {countdown ? formatCountdown(countdown.minutesToBedtime) : `Night starts at ${state.settings.bedtime}`}
+              {/* "Who goes first" frosted pill */}
+              <div className="mt-2 px-6 py-3 bg-white/10 border border-white/10 rounded-full backdrop-blur-sm flex items-center gap-2">
+                <Moon className="w-4 h-4 text-yellow-200 fill-yellow-200" />
+                <span className="text-indigo-100 font-medium">
+                  {tonightParent === currentUser
+                    ? "You're up first tonight"
+                    : `${tonightParent} is up first tonight`
+                  }
+                </span>
               </div>
             </motion.div>
           )}
