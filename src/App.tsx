@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { Settings, Moon, Sun, Check, Bell, User } from 'lucide-react';
@@ -27,7 +27,13 @@ export default function App() {
   const [state, setState] = useState<AppState | null>(null);
   const [loading, setLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const showSettingsRef = useRef(false);
   const [pushSupported, setPushSupported] = useState(false);
+
+  // Keep ref in sync with state so polling always reads the latest value
+  useEffect(() => {
+    showSettingsRef.current = showSettings;
+  }, [showSettings]);
 
   // Form state
   const [p1Name, setP1Name] = useState('');
@@ -58,7 +64,7 @@ export default function App() {
       const data = await res.json();
       setState(data);
       // Only update form state if not editing in settings modal
-      if (!showSettings) {
+      if (!showSettingsRef.current) {
         setP1Name(data.settings.parent1_name);
         setP2Name(data.settings.parent2_name);
         setBedtime(data.settings.bedtime);
