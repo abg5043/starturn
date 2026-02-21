@@ -475,7 +475,7 @@ export default function App() {
             onClick={handleLogout}
             className="text-xs font-medium text-indigo-300 hover:text-white px-3 py-2 rounded-full hover:bg-white/10 transition-colors"
           >
-            Switch
+            Logout
           </button>
           <button
             onClick={() => setShowSettings(true)}
