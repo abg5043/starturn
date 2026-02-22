@@ -71,34 +71,39 @@ function TripRow({
         layout
         exit={{ opacity: 0, height: 0, marginBottom: 0 }}
         transition={{ duration: 0.18 }}
-        className={`group flex items-start gap-3 py-1.5 relative ${isOverride ? 'opacity-60' : ''}`}
+        className={`group relative ${isOverride ? 'opacity-60' : ''}`}
       >
-        <div className="w-5 mt-0.5 flex-shrink-0 flex items-center justify-center">
-          {isFirst && !isOverride ? (
-            <Moon className="w-3.5 h-3.5 text-indigo-300" />
-          ) : isOverride ? (
-            <ArrowRight className="w-3.5 h-3.5 text-indigo-400/60" />
-          ) : (
-            <span className="text-indigo-400/40 text-xs">·</span>
-          )}
+        {/* Inner wrapper clips row content during the height-collapse animation
+            without clipping the absolutely-positioned popover menu. */}
+        <div className="flex items-start gap-3 py-1.5 overflow-hidden">
+          <div className="w-5 mt-0.5 flex-shrink-0 flex items-center justify-center">
+            {isFirst && !isOverride ? (
+              <Moon className="w-3.5 h-3.5 text-indigo-300" />
+            ) : isOverride ? (
+              <ArrowRight className="w-3.5 h-3.5 text-indigo-400/60" />
+            ) : (
+              <span className="text-indigo-400/40 text-xs">·</span>
+            )}
+          </div>
+          <span className="text-xs text-indigo-300/70 w-16 flex-shrink-0 mt-0.5">
+            {formatTripTime(trip.timestamp)}
+          </span>
+          <span className={`text-sm ${isOverride ? 'text-indigo-200/50 italic' : 'text-indigo-100'}`}>
+            {label}
+          </span>
+
+          {/* ··· button */}
+          <button
+            onClick={() => isMenuOpen ? onMenuClose() : onMenuOpen(menuKey)}
+            className={`ml-auto p-1 rounded-md text-indigo-400/30 hover:text-indigo-300 hover:bg-white/5 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 ${isMenuOpen ? 'opacity-60' : ''}`}
+            aria-label="Entry options"
+          >
+            <MoreHorizontal className="w-4 h-4" />
+          </button>
         </div>
-        <span className="text-xs text-indigo-300/70 w-16 flex-shrink-0 mt-0.5">
-          {formatTripTime(trip.timestamp)}
-        </span>
-        <span className={`text-sm ${isOverride ? 'text-indigo-200/50 italic' : 'text-indigo-100'}`}>
-          {label}
-        </span>
 
-        {/* ··· button */}
-        <button
-          onClick={() => isMenuOpen ? onMenuClose() : onMenuOpen(menuKey)}
-          className={`ml-auto p-1 rounded-md text-indigo-400/30 hover:text-indigo-300 hover:bg-white/5 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 ${isMenuOpen ? 'opacity-60' : ''}`}
-          aria-label="Entry options"
-        >
-          <MoreHorizontal className="w-4 h-4" />
-        </button>
-
-        {/* Popover menu */}
+        {/* Popover menu — lives outside the overflow-hidden inner wrapper so it
+            is never clipped by the collapse animation. */}
         <AnimatePresence>
           {isMenuOpen && (
             <motion.div
