@@ -198,6 +198,11 @@ export const getJournal = (familyId: string) => {
   });
 };
 
+// Update the parent_name of a single log entry, scoped to the family for safety
+export const updateJournalEntry = (familyId: string, id: number, parentName: string) => {
+  db.prepare('UPDATE logs SET parent_name = ? WHERE id = ? AND family_id = ?').run(parentName, id, familyId);
+};
+
 // Delete a single log entry by id, scoped to the family for safety
 export const deleteJournalEntry = (familyId: string, id: number) => {
   db.prepare('DELETE FROM logs WHERE id = ? AND family_id = ?').run(id, familyId);

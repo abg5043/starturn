@@ -18,6 +18,8 @@ interface Night {
 
 interface JournalModalProps {
   onClose: () => void;
+  parent1Name: string;
+  parent2Name: string;
 }
 
 function formatTripTime(timestamp: string): string {
@@ -35,10 +37,15 @@ interface TripRowProps {
   isFirst: boolean;
   openMenuId: string | null;
   confirmingId: string | null;
+  editingEntryId: number | null;
+  parentNames: [string, string];
   onMenuOpen: (id: string) => void;
   onMenuClose: () => void;
   onSetConfirming: (id: string) => void;
   onDeleteEntry: (tripId: number, nightDate: string) => void;
+  onEditOpen: (tripId: number) => void;
+  onEditSave: (tripId: number, nightDate: string, newParentName: string) => void;
+  onEditClose: () => void;
 }
 
 function TripRow({
@@ -46,10 +53,15 @@ function TripRow({
   isFirst,
   openMenuId,
   confirmingId,
+  editingEntryId,
+  parentNames,
   onMenuOpen,
   onMenuClose,
   onSetConfirming,
   onDeleteEntry,
+  onEditOpen,
+  onEditSave,
+  onEditClose,
 }: TripRowProps) {
   const isSkip = trip.action === 'skipped_turn';
   const isTakeover = trip.action === 'took_over';
@@ -58,6 +70,15 @@ function TripRow({
   const menuKey = `trip-${trip.id}`;
   const isMenuOpen = openMenuId === menuKey;
   const isConfirming = confirmingId === menuKey;
+  // Track the selected parent name while editing this entry
+  const isEditing = editingEntryId === trip.id;
+  const [editParentName, setEditParentName] = React.useState(trip.parent_name);
+
+  // Reset the edit dropdown to the current parent_name each time edit mode opens,
+  // so a previously cancelled or saved edit doesn't leak its selection into the next edit.
+  React.useEffect(() => {
+    if (isEditing) setEditParentName(trip.parent_name);
+  }, [isEditing, trip.parent_name]);
 
   const label = isSkip
     ? `${trip.parent_name} passed their turn`
@@ -82,24 +103,57 @@ function TripRow({
             ) : isOverride ? (
               <ArrowRight className="w-3.5 h-3.5 text-indigo-400/60" />
             ) : (
-              <span className="text-indigo-400/40 text-xs">·</span>
+              <span className="text-indigo-300/70 text-xs">·</span>
             )}
           </div>
           <span className="text-xs text-indigo-300/70 w-16 flex-shrink-0 mt-0.5">
             {formatTripTime(trip.timestamp)}
           </span>
-          <span className={`text-sm ${isOverride ? 'text-indigo-200/50 italic' : 'text-indigo-100'}`}>
-            {label}
-          </span>
 
-          {/* ··· button */}
-          <button
-            onClick={() => isMenuOpen ? onMenuClose() : onMenuOpen(menuKey)}
-            className={`ml-auto p-1 rounded-md text-indigo-400/30 hover:text-indigo-300 hover:bg-white/5 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 ${isMenuOpen ? 'opacity-60' : ''}`}
-            aria-label="Entry options"
-          >
-            <MoreHorizontal className="w-4 h-4" />
-          </button>
+          {/* Inline edit form — shown instead of label when editing */}
+          {isEditing ? (
+            <div className="flex items-center gap-2 flex-1">
+              <select
+                aria-label="Parent for this entry"
+                value={parentNames.includes(editParentName) ? editParentName : ''}
+                onChange={e => setEditParentName(e.target.value)}
+                className="flex-1 text-sm bg-slate-700 border border-white/10 rounded-lg px-2 py-1 text-indigo-100 focus:outline-none focus:border-indigo-400"
+              >
+                <option value="" disabled>Select a parent</option>
+                {parentNames.map((name, index) => (
+                  <option key={index} value={name}>{name}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => onEditSave(trip.id, trip.night_date, editParentName)}
+                disabled={!parentNames.includes(editParentName)}
+                className="text-xs text-indigo-300 hover:text-white bg-indigo-500/20 hover:bg-indigo-500/40 px-2 py-1 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Save
+              </button>
+              <button
+                onClick={onEditClose}
+                className="text-xs text-indigo-400/60 hover:text-indigo-300 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <>
+              <span className={`text-sm ${isOverride ? 'text-indigo-200/50 italic' : 'text-indigo-100'}`}>
+                {label}
+              </span>
+
+              {/* ··· button */}
+              <button
+                onClick={() => isMenuOpen ? onMenuClose() : onMenuOpen(menuKey)}
+                className={`ml-auto p-1 rounded-md text-indigo-400/30 hover:text-indigo-300 hover:bg-white/5 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 ${isMenuOpen ? 'opacity-60' : ''}`}
+                aria-label="Entry options"
+              >
+                <MoreHorizontal className="w-4 h-4" />
+              </button>
+            </>
+          )}
         </div>
 
         {/* Popover menu — lives outside the overflow-hidden inner wrapper so it
@@ -115,14 +169,13 @@ function TripRow({
             >
               {!isConfirming ? (
                 <>
-                  {/* Edit — scaffolded for future use */}
+                  {/* Edit parent name */}
                   <button
-                    disabled
-                    className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-indigo-300/50 cursor-not-allowed"
+                    onClick={() => { onMenuClose(); onEditOpen(trip.id); }}
+                    className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-indigo-300 hover:bg-white/5 transition-colors"
                   >
                     <Pencil className="w-3.5 h-3.5" />
                     Edit entry
-                    <span className="text-xs text-indigo-400/30 ml-auto">(soon)</span>
                   </button>
                   {/* Delete */}
                   <button
@@ -160,13 +213,18 @@ function TripRow({
   );
 }
 
-export function JournalModal({ onClose }: JournalModalProps) {
+export function JournalModal({ onClose, parent1Name, parent2Name }: JournalModalProps) {
   const [nights, setNights] = useState<Night[]>([]);
   const [loading, setLoading] = useState(true);
   // Tracks which ··· menu is open: "trip-{id}" or "night-{nightDate}"
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   // Tracks which item is in "Are you sure?" state
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  // Tracks which trip entry is in inline edit mode
+  const [editingEntryId, setEditingEntryId] = useState<number | null>(null);
+
+  // The two parent names as a tuple for the edit dropdown
+  const parentNames: [string, string] = [parent1Name, parent2Name];
 
   useEffect(() => {
     fetch('/api/journal')
@@ -204,6 +262,37 @@ export function JournalModal({ onClose }: JournalModalProps) {
       );
     } finally {
       closeMenu();
+    }
+  };
+
+  const handleEditSave = async (tripId: number, nightDate: string, newParentName: string) => {
+    try {
+      const res = await fetch(`/api/journal/entry/${tripId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parent_name: newParentName }),
+      });
+      if (!res.ok) {
+        console.error(`Failed to update journal entry ${tripId}:`, res.status, res.statusText);
+        return;
+      }
+      // Update the parent_name in local state
+      setNights(prev =>
+        prev.map(night =>
+          night.night_date === nightDate
+            ? {
+                ...night,
+                trips: night.trips.map(t =>
+                  t.id === tripId ? { ...t, parent_name: newParentName } : t
+                ),
+              }
+            : night
+        )
+      );
+      // Exit edit mode only after a successful update
+      setEditingEntryId(null);
+    } catch (error) {
+      console.error(`Error updating journal entry ${tripId}:`, error);
     }
   };
 
@@ -355,10 +444,15 @@ export function JournalModal({ onClose }: JournalModalProps) {
                             isFirst={trip.id === firstActualTrip?.id}
                             openMenuId={openMenuId}
                             confirmingId={confirmingId}
+                            editingEntryId={editingEntryId}
+                            parentNames={parentNames}
                             onMenuOpen={openMenu}
                             onMenuClose={closeMenu}
                             onSetConfirming={setConfirmingId}
                             onDeleteEntry={handleDeleteEntry}
+                            onEditOpen={setEditingEntryId}
+                            onEditSave={handleEditSave}
+                            onEditClose={() => setEditingEntryId(null)}
                           />
                         </React.Fragment>
                       ))}
