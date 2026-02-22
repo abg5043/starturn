@@ -10,7 +10,7 @@ import {
   getSettings, updateSettings, toggleTurn, logAction, getLogs,
   saveSubscription, getSubscriptions, getVapidKeys, saveVapidKeys,
   getAllSettings, getFirstTripOfNight, setTurnIndex, getJournal,
-  deleteJournalEntry, clearJournalNight,
+  deleteJournalEntry, clearJournalNight, updateJournalEntry,
   createMagicLink, consumeMagicLink, createSession, getSession,
   deleteSession, cleanupExpired, getParentEmail,
   saveSubscriptionWithParent, getSubscriptionsForParent,
@@ -614,6 +614,32 @@ async function startServer() {
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error in DELETE /api/journal/entry/:id:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update the parent_name of a single journal entry
+  app.patch("/api/journal/entry/:id", authenticateRequest, (req, res) => {
+    try {
+      const familyId = (req as any).familyId;
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
+      const { parent_name } = req.body;
+      if (!parent_name || typeof parent_name !== 'string' || parent_name.trim() === '') {
+        return res.status(400).json({ error: 'parent_name is required' });
+      }
+      const trimmedName = parent_name.trim();
+      // Only allow names belonging to this family to prevent arbitrary injection
+      const settings = getSettings(familyId);
+      if (!settings) return res.status(404).json({ error: 'Family not found' });
+      const validNames = [settings.parent1_name, settings.parent2_name];
+      if (!validNames.includes(trimmedName)) {
+        return res.status(400).json({ error: 'parent_name must be one of the family members' });
+      }
+      updateJournalEntry(familyId, id, trimmedName);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error in PATCH /api/journal/entry/:id:", error);
       res.status(500).json({ error: error.message });
     }
   });
