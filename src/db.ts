@@ -58,6 +58,8 @@ db.exec(`
     parent_index INTEGER NOT NULL,
     expires_at DATETIME NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY);
 `);
 
 // Migrations: add new columns if they don't exist yet
@@ -75,6 +77,28 @@ try { db.exec(`CREATE INDEX IF NOT EXISTS idx_settings_parent2_email ON settings
 
 // Mark existing families that already have custom names as setup complete
 db.exec(`UPDATE settings SET is_setup_complete = 1 WHERE (parent1_name != 'Parent 1' OR parent2_name != 'Parent 2') AND is_setup_complete = 0`);
+
+// Helper: run a named migration exactly once per database instance
+function runOnce(name: string, fn: () => void) {
+  const already = db.prepare('SELECT 1 FROM migrations WHERE name = ?').get(name);
+  if (!already) {
+    fn();
+    db.prepare('INSERT INTO migrations (name) VALUES (?)').run(name);
+  }
+}
+
+// Fix historical log timestamps stored as bare SQLite CURRENT_TIMESTAMP (no timezone indicator)
+// by converting them to a proper UTC ISO string so JavaScript's new Date() parses them correctly.
+runOnce('fix-log-timestamps-utc', () => {
+  db.exec(`
+    UPDATE logs
+    SET timestamp = replace(timestamp, ' ', 'T') || '.000Z'
+    WHERE timestamp NOT LIKE '%Z%'
+      AND timestamp NOT LIKE '%+%'
+      AND timestamp NOT LIKE '%T%'
+      AND timestamp LIKE '____-__-__ __:__:__'
+  `);
+});
 
 export const getVapidKeys = () => {
   return db.prepare('SELECT * FROM vapid_keys WHERE id = 1').get();
@@ -132,7 +156,8 @@ export const setTurnIndex = (familyId: string, index: number) => {
 };
 
 export const logAction = (familyId: string, parentName: string, action: string, nightDate?: string) => {
-  db.prepare('INSERT INTO logs (family_id, parent_name, action, night_date) VALUES (?, ?, ?, ?)').run(familyId, parentName, action, nightDate ?? null);
+  const now = new Date().toISOString();
+  db.prepare('INSERT INTO logs (family_id, parent_name, action, night_date, timestamp) VALUES (?, ?, ?, ?, ?)').run(familyId, parentName, action, nightDate ?? null, now);
 };
 
 export const getLogs = (familyId: string) => {
