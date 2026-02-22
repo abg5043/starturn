@@ -1045,7 +1045,11 @@ export default function App() {
       {/* Journal Modal */}
       <AnimatePresence>
         {showJournal && (
-          <JournalModal onClose={() => setShowJournal(false)} />
+          <JournalModal
+              onClose={() => setShowJournal(false)}
+              parent1Name={state.settings.parent1_name}
+              parent2Name={state.settings.parent2_name}
+            />
         )}
       </AnimatePresence>
 
