@@ -114,17 +114,20 @@ function TripRow({
           {isEditing ? (
             <div className="flex items-center gap-2 flex-1">
               <select
-                value={editParentName}
+                aria-label="Parent for this entry"
+                value={parentNames.includes(editParentName) ? editParentName : ''}
                 onChange={e => setEditParentName(e.target.value)}
                 className="flex-1 text-sm bg-slate-700 border border-white/10 rounded-lg px-2 py-1 text-indigo-100 focus:outline-none focus:border-indigo-400"
               >
-                {parentNames.map(name => (
-                  <option key={name} value={name}>{name}</option>
+                <option value="" disabled>Select a parent</option>
+                {parentNames.map((name, index) => (
+                  <option key={index} value={name}>{name}</option>
                 ))}
               </select>
               <button
                 onClick={() => onEditSave(trip.id, trip.night_date, editParentName)}
-                className="text-xs text-indigo-300 hover:text-white bg-indigo-500/20 hover:bg-indigo-500/40 px-2 py-1 rounded-lg transition-colors"
+                disabled={!parentNames.includes(editParentName)}
+                className="text-xs text-indigo-300 hover:text-white bg-indigo-500/20 hover:bg-indigo-500/40 px-2 py-1 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Save
               </button>
@@ -286,8 +289,10 @@ export function JournalModal({ onClose, parent1Name, parent2Name }: JournalModal
             : night
         )
       );
-    } finally {
+      // Exit edit mode only after a successful update
       setEditingEntryId(null);
+    } catch (error) {
+      console.error(`Error updating journal entry ${tripId}:`, error);
     }
   };
 
