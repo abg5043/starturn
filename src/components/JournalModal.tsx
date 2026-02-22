@@ -92,114 +92,122 @@ function TripRow({
         layout
         exit={{ opacity: 0, height: 0, marginBottom: 0 }}
         transition={{ duration: 0.18 }}
-        className={`group flex items-start gap-3 py-1.5 relative ${isOverride ? 'opacity-60' : ''}`}
+        className={`group relative ${isOverride ? 'opacity-60' : ''}`}
       >
-        <div className="w-5 mt-0.5 flex-shrink-0 flex items-center justify-center">
-          {isFirst && !isOverride ? (
-            <Moon className="w-3.5 h-3.5 text-indigo-300" />
-          ) : isOverride ? (
-            <ArrowRight className="w-3.5 h-3.5 text-indigo-400/60" />
+        {/* Inner wrapper clips row content during the height-collapse animation
+            without clipping the absolutely-positioned popover menu. */}
+        <div className="flex items-start gap-3 py-1.5 overflow-hidden">
+          <div className="w-5 mt-0.5 flex-shrink-0 flex items-center justify-center">
+            {isFirst && !isOverride ? (
+              <Moon className="w-3.5 h-3.5 text-indigo-300" />
+            ) : isOverride ? (
+              <ArrowRight className="w-3.5 h-3.5 text-indigo-400/60" />
+            ) : (
+              <span className="text-indigo-300/70 text-xs">·</span>
+            )}
+          </div>
+          <span className="text-xs text-indigo-300/70 w-16 flex-shrink-0 mt-0.5">
+            {formatTripTime(trip.timestamp)}
+          </span>
+
+          {/* Inline edit form — shown instead of label when editing */}
+          {isEditing ? (
+            <div className="flex items-center gap-2 flex-1">
+              <select
+                aria-label="Parent for this entry"
+                value={parentNames.includes(editParentName) ? editParentName : ''}
+                onChange={e => setEditParentName(e.target.value)}
+                className="flex-1 text-sm bg-slate-700 border border-white/10 rounded-lg px-2 py-1 text-indigo-100 focus:outline-none focus:border-indigo-400"
+              >
+                <option value="" disabled>Select a parent</option>
+                {parentNames.map((name, index) => (
+                  <option key={index} value={name}>{name}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => onEditSave(trip.id, trip.night_date, editParentName)}
+                disabled={!parentNames.includes(editParentName)}
+                className="text-xs text-indigo-300 hover:text-white bg-indigo-500/20 hover:bg-indigo-500/40 px-2 py-1 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Save
+              </button>
+              <button
+                onClick={onEditClose}
+                className="text-xs text-indigo-400/60 hover:text-indigo-300 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
           ) : (
-            <span className="text-indigo-300/70 text-xs">·</span>
+            <>
+              <span className={`text-sm ${isOverride ? 'text-indigo-200/50 italic' : 'text-indigo-100'}`}>
+                {label}
+              </span>
+
+              {/* ··· button */}
+              <button
+                onClick={() => isMenuOpen ? onMenuClose() : onMenuOpen(menuKey)}
+                className={`ml-auto p-1 rounded-md text-indigo-400/30 hover:text-indigo-300 hover:bg-white/5 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 ${isMenuOpen ? 'opacity-60' : ''}`}
+                aria-label="Entry options"
+              >
+                <MoreHorizontal className="w-4 h-4" />
+              </button>
+            </>
           )}
         </div>
-        <span className="text-xs text-indigo-300/70 w-16 flex-shrink-0 mt-0.5">
-          {formatTripTime(trip.timestamp)}
-        </span>
 
-        {/* Inline edit form — shown instead of label when editing */}
-        {isEditing ? (
-          <div className="flex items-center gap-2 flex-1">
-            <select
-              value={editParentName}
-              onChange={e => setEditParentName(e.target.value)}
-              className="flex-1 text-sm bg-slate-700 border border-white/10 rounded-lg px-2 py-1 text-indigo-100 focus:outline-none focus:border-indigo-400"
+        {/* Popover menu — lives outside the overflow-hidden inner wrapper so it
+            is never clipped by the collapse animation. */}
+        <AnimatePresence>
+          {isMenuOpen && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: -4 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: -4 }}
+              transition={{ duration: 0.1 }}
+              className="absolute right-0 top-6 z-20 bg-slate-800 border border-white/10 rounded-xl shadow-xl overflow-hidden min-w-[160px]"
             >
-              {parentNames.map(name => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
-            <button
-              onClick={() => onEditSave(trip.id, trip.night_date, editParentName)}
-              className="text-xs text-indigo-300 hover:text-white bg-indigo-500/20 hover:bg-indigo-500/40 px-2 py-1 rounded-lg transition-colors"
-            >
-              Save
-            </button>
-            <button
-              onClick={onEditClose}
-              className="text-xs text-indigo-400/60 hover:text-indigo-300 transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        ) : (
-          <>
-            <span className={`text-sm ${isOverride ? 'text-indigo-200/50 italic' : 'text-indigo-100'}`}>
-              {label}
-            </span>
-
-            {/* ··· button */}
-            <button
-              onClick={() => isMenuOpen ? onMenuClose() : onMenuOpen(menuKey)}
-              className={`ml-auto p-1 rounded-md text-indigo-400/30 hover:text-indigo-300 hover:bg-white/5 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 ${isMenuOpen ? 'opacity-60' : ''}`}
-              aria-label="Entry options"
-            >
-              <MoreHorizontal className="w-4 h-4" />
-            </button>
-
-            {/* Popover menu */}
-            <AnimatePresence>
-              {isMenuOpen && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95, y: -4 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95, y: -4 }}
-                  transition={{ duration: 0.1 }}
-                  className="absolute right-0 top-6 z-20 bg-slate-800 border border-white/10 rounded-xl shadow-xl overflow-hidden min-w-[160px]"
-                >
-                  {!isConfirming ? (
-                    <>
-                      {/* Edit parent name */}
-                      <button
-                        onClick={() => { onMenuClose(); onEditOpen(trip.id); }}
-                        className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-indigo-300 hover:bg-white/5 transition-colors"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                        Edit entry
-                      </button>
-                      {/* Delete */}
-                      <button
-                        onClick={() => onSetConfirming(menuKey)}
-                        className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-rose-400 hover:bg-rose-500/10 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        Delete entry
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-xs text-indigo-200/70 px-4 pt-3 pb-1">Delete this entry?</p>
-                      <div className="flex">
-                        <button
-                          onClick={onMenuClose}
-                          className="flex-1 px-4 py-2.5 text-sm text-indigo-300 hover:bg-white/5 transition-colors"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={() => onDeleteEntry(trip.id, trip.night_date)}
-                          className="flex-1 px-4 py-2.5 text-sm text-rose-400 hover:bg-rose-500/10 transition-colors"
-                        >
-                          Yes, delete
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </motion.div>
+              {!isConfirming ? (
+                <>
+                  {/* Edit parent name */}
+                  <button
+                    onClick={() => { onMenuClose(); onEditOpen(trip.id); }}
+                    className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-indigo-300 hover:bg-white/5 transition-colors"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    Edit entry
+                  </button>
+                  {/* Delete */}
+                  <button
+                    onClick={() => onSetConfirming(menuKey)}
+                    className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-rose-400 hover:bg-rose-500/10 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Delete entry
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-indigo-200/70 px-4 pt-3 pb-1">Delete this entry?</p>
+                  <div className="flex">
+                    <button
+                      onClick={onMenuClose}
+                      className="flex-1 px-4 py-2.5 text-sm text-indigo-300 hover:bg-white/5 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => onDeleteEntry(trip.id, trip.night_date)}
+                      className="flex-1 px-4 py-2.5 text-sm text-rose-400 hover:bg-rose-500/10 transition-colors"
+                    >
+                      Yes, delete
+                    </button>
+                  </div>
+                </>
               )}
-            </AnimatePresence>
-          </>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
     </AnimatePresence>
   );
@@ -281,8 +289,10 @@ export function JournalModal({ onClose, parent1Name, parent2Name }: JournalModal
             : night
         )
       );
-    } finally {
+      // Exit edit mode only after a successful update
       setEditingEntryId(null);
+    } catch (error) {
+      console.error(`Error updating journal entry ${tripId}:`, error);
     }
   };
 
