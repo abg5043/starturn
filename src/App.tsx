@@ -98,7 +98,6 @@ export default function App() {
   // ─── UI state: toasts, prompts, two-tap button ─────────────────────────────
   const [toast, setToast] = useState<Toast>(null);
   const [showNotifPrompt, setShowNotifPrompt] = useState(false);
-  const [isActivelyUp, setIsActivelyUp] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [resendingInvite, setResendingInvite] = useState(false);
 
@@ -223,21 +222,13 @@ export default function App() {
     }
   };
 
-  const handleGoingIn = async () => {
-    // First tap: mark as actively handling the wake-up
-    setIsActivelyUp(true);
-
-    // Log the "going in" action so the journal captures it
+  const handleDone = async () => {
+    // Single tap: log the turn, celebrate, and pass the turn to the partner
     await fetch('/api/complete-turn', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({})
     });
-  };
-
-  const handleBackInBed = async () => {
-    // Second tap: celebrate and pass the turn
-    setIsActivelyUp(false);
 
     confetti({
       particleCount: 100,
@@ -760,23 +751,13 @@ export default function App() {
               <div className="flex flex-col items-center gap-4 w-full">
                 {isMyTurn ? (
                   <>
-                    {isActivelyUp ? (
-                      <button
-                        onClick={handleBackInBed}
+                    <button
+                        onClick={handleDone}
                         className="group relative px-8 py-4 bg-indigo-500 text-white rounded-full font-bold text-lg shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30 hover:scale-105 transition-all active:scale-95 flex items-center gap-3"
                       >
                         <Check className="w-5 h-5" />
-                        <span>Done &mdash; Back in Bed</span>
+                        <span>Done &mdash; Going Back to Bed</span>
                       </button>
-                    ) : (
-                      <button
-                        onClick={handleGoingIn}
-                        className="group relative px-8 py-4 bg-white text-slate-900 rounded-full font-bold text-lg shadow-lg shadow-white/10 hover:shadow-white/20 hover:scale-105 transition-all active:scale-95 flex items-center gap-3"
-                      >
-                        <Star className="w-5 h-5" />
-                        <span>I'm Going In</span>
-                      </button>
-                    )}
                     <button
                       onClick={() => handleOverrideTurn('skip')}
                       className="text-sm text-indigo-300/60 hover:text-indigo-200 underline underline-offset-2 transition-colors"
