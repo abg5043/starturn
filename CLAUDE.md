@@ -23,3 +23,7 @@
 - Avoid over-engineering — only add what's needed for the current feature.
 - When modifying server logic, always update both the scheduler and the `/api/state` endpoint in tandem.
 - Default new settings to preserve existing behavior (e.g., `rotation_mode` defaults to `'alternate_nightly'`).
+
+## Git
+
+- Do NOT add "Co-Authored-By: Claude" to commit messages.

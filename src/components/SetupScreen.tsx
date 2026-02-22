@@ -6,6 +6,20 @@ interface SetupScreenProps {
   onComplete: () => void;
 }
 
+// ─── Map server errors to user-friendly messages ─────────────────────────────
+
+const friendlyErrorMessages: Record<string, string> = {
+  'Email already registered': 'This email is already linked to a StarTurn family. Try signing in instead.',
+  'Partner email already registered with another family': "Your partner's email is already linked to another family.",
+  'Your email and your partner\'s email must be different': 'You and your partner need different email addresses.',
+  'Please enter valid email addresses': 'One or both email addresses look invalid. Please double-check.',
+  'Names cannot be empty': 'Both names are required.',
+};
+
+function toFriendlyError(serverError: string): string {
+  return friendlyErrorMessages[serverError] || serverError;
+}
+
 export function SetupScreen({ email, onComplete }: SetupScreenProps) {
   const [myName, setMyName] = useState('');
   const [partnerName, setPartnerName] = useState('');
@@ -21,6 +35,17 @@ export function SetupScreen({ email, onComplete }: SetupScreenProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit || saving) return;
+
+    // Client-side validation before hitting the server
+    if (myName.trim().length > 30 || partnerName.trim().length > 30) {
+      setError('Names must be 30 characters or fewer.');
+      return;
+    }
+    if (email.trim().toLowerCase() === partnerEmail.trim().toLowerCase()) {
+      setError('You and your partner need different email addresses.');
+      return;
+    }
+
     setSaving(true);
     setError('');
 
@@ -40,7 +65,7 @@ export function SetupScreen({ email, onComplete }: SetupScreenProps) {
 
     if (!res.ok) {
       const err = await res.json();
-      setError(err.error || 'Setup failed');
+      setError(toFriendlyError(err.error || 'Setup failed. Please try again.'));
       setSaving(false);
       return;
     }
@@ -78,6 +103,7 @@ export function SetupScreen({ email, onComplete }: SetupScreenProps) {
             placeholder="e.g. Alice"
             value={myName}
             onChange={(e) => setMyName(e.target.value)}
+            maxLength={30}
             required
             autoFocus
             className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -91,6 +117,7 @@ export function SetupScreen({ email, onComplete }: SetupScreenProps) {
             placeholder="e.g. Ben"
             value={partnerName}
             onChange={(e) => setPartnerName(e.target.value)}
+            maxLength={30}
             required
             className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
@@ -106,6 +133,7 @@ export function SetupScreen({ email, onComplete }: SetupScreenProps) {
             required
             className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
+          <p className="text-xs text-indigo-300/50 mt-1">We'll send them an invite to join your StarTurn.</p>
         </div>
 
         <div>
@@ -131,7 +159,8 @@ export function SetupScreen({ email, onComplete }: SetupScreenProps) {
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-indigo-300 uppercase tracking-wider mb-2">Who goes first tonight?</label>
+          <label className="block text-xs font-medium text-indigo-300 uppercase tracking-wider mb-1">Who goes first tonight?</label>
+          <p className="text-xs text-indigo-300/50 mb-2">Pick who takes the first shift tonight. You'll alternate from here.</p>
           <div className="grid grid-cols-2 gap-3">
             <button
               type="button"

@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
-import { Settings, Moon, Check, Bell, Star, BookOpen, Mail, ArrowRightLeft, HelpCircle, Smartphone } from 'lucide-react';
+import { Settings, Moon, Check, Bell, Star, BookOpen, Mail, ArrowRightLeft, HelpCircle, Smartphone, CheckCircle, AlertTriangle, X } from 'lucide-react';
 import { StarryBackground } from './components/StarryBackground';
 import { SetupScreen } from './components/SetupScreen';
 import { JournalModal } from './components/JournalModal';
@@ -35,6 +35,7 @@ type AppState = {
 
 type AuthStatus = 'loading' | 'unauthenticated' | 'check_email' | 'authenticated';
 type LoginStep = 'email' | 'setup' | 'check_email';
+type Toast = { message: string; type: 'success' | 'error' | 'info' } | null;
 
 function formatCountdownParts(minutes: number): { time: string; label: string } {
   if (minutes <= 0) return { time: 'Now', label: 'Bedtime!' };
@@ -84,6 +85,7 @@ export default function App() {
   const [parentIndex, setParentIndex] = useState<number | null>(null);
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [partnerName, setPartnerName] = useState<string | null>(null);
+  const [partnerHasJoined, setPartnerHasJoined] = useState(true);
 
   // ─── App state ────────────────────────────────────────────────────────────
   const [state, setState] = useState<AppState | null>(null);
@@ -92,6 +94,13 @@ export default function App() {
   const [showHelp, setShowHelp] = useState(false);
   const showSettingsRef = useRef(false);
   const [pushSupported, setPushSupported] = useState(false);
+
+  // ─── UI state: toasts, prompts, two-tap button ─────────────────────────────
+  const [toast, setToast] = useState<Toast>(null);
+  const [showNotifPrompt, setShowNotifPrompt] = useState(false);
+  const [isActivelyUp, setIsActivelyUp] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [resendingInvite, setResendingInvite] = useState(false);
 
   // ─── Login flow state ─────────────────────────────────────────────────────
   const [loginInput, setLoginInput] = useState('');
@@ -114,6 +123,12 @@ export default function App() {
     showSettingsRef.current = showSettings;
   }, [showSettings]);
 
+  // ─── Toast helper: auto-dismiss after 3 seconds ────────────────────────────
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
+
   // ─── Check auth on load ───────────────────────────────────────────────────
   useEffect(() => {
     checkAuth();
@@ -131,8 +146,21 @@ export default function App() {
         setParentIndex(data.parentIndex);
         setCurrentUser(data.parentName);
         setPartnerName(data.partnerName);
+        setPartnerHasJoined(data.partnerHasJoined ?? true);
         localStorage.setItem('starturn_parent_name', data.parentName);
         setAuthStatus('authenticated');
+
+        // Show welcome card for invited partners on their first visit
+        if (data.parentIndex === 1 && !localStorage.getItem('starturn_welcomed')) {
+          setShowWelcome(true);
+          localStorage.setItem('starturn_welcomed', '1');
+          setTimeout(() => setShowWelcome(false), 5000);
+        }
+
+        // One-time notification prompt (after first login completes)
+        if (!localStorage.getItem('starturn_notif_prompted')) {
+          setTimeout(() => setShowNotifPrompt(true), 2000);
+        }
       } else {
         setAuthStatus('unauthenticated');
       }
@@ -195,23 +223,27 @@ export default function App() {
     }
   };
 
-  const handleCompleteTurn = async () => {
-    if (!state) return;
-    const currentParent = state.settings.current_turn_index === 0
-      ? state.settings.parent1_name
-      : state.settings.parent2_name;
+  const handleGoingIn = async () => {
+    // First tap: mark as actively handling the wake-up
+    setIsActivelyUp(true);
+
+    // Log the "going in" action so the journal captures it
+    await fetch('/api/complete-turn', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+  };
+
+  const handleBackInBed = async () => {
+    // Second tap: celebrate and pass the turn
+    setIsActivelyUp(false);
 
     confetti({
       particleCount: 100,
       spread: 70,
       origin: { y: 0.6 },
       colors: ['#FFD700', '#FFA500', '#FFFFFF']
-    });
-
-    await fetch('/api/complete-turn', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({})
     });
 
     fetchState();
@@ -235,7 +267,7 @@ export default function App() {
     });
 
     if (!response.ok) {
-      console.error('Failed to save settings');
+      showToast('Failed to save settings', 'error');
       return;
     }
 
@@ -243,18 +275,19 @@ export default function App() {
     await checkAuth();
     await fetchState();
     setShowSettings(false);
+    showToast('Settings saved');
   };
 
   const subscribeToPush = async () => {
     if (!pushSupported) return;
     if (Notification.permission === 'denied') {
-      alert('Notifications are blocked. Please enable them in your browser settings.');
+      showToast('Notifications are blocked in your browser settings', 'error');
       return;
     }
     try {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
-        alert('Permission not granted for notifications.');
+        showToast('Notification permission was not granted', 'info');
         return;
       }
       const register = await navigator.serviceWorker.register('/sw.js');
@@ -270,10 +303,10 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subscription })
       });
-      alert('Notifications enabled! You will be notified when a turn is completed.');
+      showToast("Notifications enabled! You'll know when it's your turn.");
     } catch (e: any) {
       console.error('Push subscription error:', e);
-      alert(`Failed to enable notifications: ${e.message || 'Unknown error'}`);
+      showToast('Could not enable notifications. Try again later.', 'error');
     }
   };
 
@@ -334,6 +367,28 @@ export default function App() {
       console.error('Error resending link:', e);
     }
     setResendingLink(false);
+  };
+
+  const handleResendInvite = async () => {
+    setResendingInvite(true);
+    try {
+      await fetch('/api/resend-invite', { method: 'POST' });
+      showToast('Invite sent to ' + partnerName);
+    } catch {
+      showToast('Failed to resend invite', 'error');
+    }
+    setResendingInvite(false);
+  };
+
+  const handleNotifEnable = async () => {
+    localStorage.setItem('starturn_notif_prompted', '1');
+    setShowNotifPrompt(false);
+    await subscribeToPush();
+  };
+
+  const handleNotifDismiss = () => {
+    localStorage.setItem('starturn_notif_prompted', '1');
+    setShowNotifPrompt(false);
   };
 
   // ─── Loading screen ───────────────────────────────────────────────────────
@@ -513,7 +568,7 @@ export default function App() {
         </div>
         <div className="flex items-center gap-2">
           <div className="text-sm text-indigo-200 mr-2 hidden sm:block">
-            Hi, {currentUser}
+            {currentUser} & {partnerName}
           </div>
           <button
             onClick={handleLogout}
@@ -536,6 +591,51 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {/* "Partner hasn't joined yet" banner */}
+      <AnimatePresence>
+        {!partnerHasJoined && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-20 left-4 right-4 z-10 flex justify-center"
+          >
+            <div className="bg-amber-500/10 border border-amber-400/20 rounded-xl px-5 py-3 backdrop-blur-sm flex items-center gap-3 max-w-md w-full">
+              <Mail className="w-5 h-5 text-amber-300 shrink-0" />
+              <div className="flex-1 text-sm">
+                <span className="text-amber-100">{partnerName} hasn't joined yet.</span>
+              </div>
+              <button
+                onClick={handleResendInvite}
+                disabled={resendingInvite}
+                className="text-xs font-medium text-amber-200 hover:text-white px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 transition-colors disabled:opacity-40 whitespace-nowrap"
+              >
+                {resendingInvite ? 'Sending...' : 'Resend Invite'}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Welcome card for invited partners */}
+      <AnimatePresence>
+        {showWelcome && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            onClick={() => setShowWelcome(false)}
+            className="fixed top-20 left-4 right-4 z-10 flex justify-center cursor-pointer"
+          >
+            <div className="bg-indigo-500/15 border border-indigo-400/20 rounded-xl px-5 py-4 backdrop-blur-sm max-w-md w-full text-center">
+              <p className="text-sm text-indigo-100">
+                Welcome, {currentUser}! {partnerName} set you up on StarTurn. You're all set to share night duty.
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Main Content */}
       <main className="relative z-0 min-h-screen flex flex-col items-center pt-24 pb-20 px-6">
@@ -660,13 +760,23 @@ export default function App() {
               <div className="flex flex-col items-center gap-4 w-full">
                 {isMyTurn ? (
                   <>
-                    <button
-                      onClick={handleCompleteTurn}
-                      className="group relative px-8 py-4 bg-white text-slate-900 rounded-full font-bold text-lg shadow-lg shadow-white/10 hover:shadow-white/20 hover:scale-105 transition-all active:scale-95 flex items-center gap-3"
-                    >
-                      <Check className="w-5 h-5" />
-                      <span>I'm Going In / Done</span>
-                    </button>
+                    {isActivelyUp ? (
+                      <button
+                        onClick={handleBackInBed}
+                        className="group relative px-8 py-4 bg-indigo-500 text-white rounded-full font-bold text-lg shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30 hover:scale-105 transition-all active:scale-95 flex items-center gap-3"
+                      >
+                        <Check className="w-5 h-5" />
+                        <span>Done &mdash; Back in Bed</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleGoingIn}
+                        className="group relative px-8 py-4 bg-white text-slate-900 rounded-full font-bold text-lg shadow-lg shadow-white/10 hover:shadow-white/20 hover:scale-105 transition-all active:scale-95 flex items-center gap-3"
+                      >
+                        <Star className="w-5 h-5" />
+                        <span>I'm Going In</span>
+                      </button>
+                    )}
                     <button
                       onClick={() => handleOverrideTurn('skip')}
                       className="text-sm text-indigo-300/60 hover:text-indigo-200 underline underline-offset-2 transition-colors"
@@ -768,7 +878,7 @@ export default function App() {
                   <div className="text-center px-4">
                     {countdownParts ? (
                       <>
-                        <h1 className="text-5xl font-bold text-white leading-none mb-1">
+                        <h1 className="text-6xl font-extrabold text-white leading-none mb-1 tracking-tight">
                           {countdownParts.time}
                         </h1>
                         <p className="text-lg text-indigo-200">{countdownParts.label}</p>
@@ -962,6 +1072,68 @@ export default function App() {
       <AnimatePresence>
         {showHelp && (
           <HelpModal onClose={() => setShowHelp(false)} />
+        )}
+      </AnimatePresence>
+
+      {/* Notification onboarding prompt — shown once after first login */}
+      <AnimatePresence>
+        {showNotifPrompt && pushSupported && (
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 30 }}
+            className="fixed bottom-6 right-6 left-6 z-50 flex justify-center"
+          >
+            <div className="bg-slate-800 border border-white/10 rounded-2xl px-5 py-4 backdrop-blur-sm max-w-sm w-full shadow-2xl">
+              <div className="flex items-start gap-3">
+                <Bell className="w-5 h-5 text-indigo-300 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm text-indigo-100 mb-3">
+                    Enable notifications so you know when your partner finishes their turn.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleNotifEnable}
+                      className="px-4 py-2 bg-indigo-500 text-white text-sm font-medium rounded-lg hover:bg-indigo-400 transition-colors"
+                    >
+                      Enable
+                    </button>
+                    <button
+                      onClick={handleNotifDismiss}
+                      className="px-4 py-2 text-indigo-300 text-sm font-medium rounded-lg hover:bg-white/5 transition-colors"
+                    >
+                      Not now
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Toast notifications */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 30 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50"
+          >
+            <div className={`flex items-center gap-2 px-5 py-3 rounded-xl shadow-2xl backdrop-blur-sm border text-sm font-medium ${
+              toast.type === 'success'
+                ? 'bg-emerald-500/15 border-emerald-400/20 text-emerald-200'
+                : toast.type === 'error'
+                ? 'bg-red-500/15 border-red-400/20 text-red-200'
+                : 'bg-indigo-500/15 border-indigo-400/20 text-indigo-200'
+            }`}>
+              {toast.type === 'success' && <CheckCircle className="w-4 h-4 shrink-0" />}
+              {toast.type === 'error' && <AlertTriangle className="w-4 h-4 shrink-0" />}
+              {toast.type === 'info' && <Bell className="w-4 h-4 shrink-0" />}
+              {toast.message}
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

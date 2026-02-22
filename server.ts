@@ -4,6 +4,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from 'url';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import { Resend } from 'resend';
 import {
   getSettings, updateSettings, toggleTurn, logAction, getLogs,
@@ -12,7 +13,8 @@ import {
   createMagicLink, consumeMagicLink, createSession, getSession,
   deleteSession, cleanupExpired, getParentEmail,
   saveSubscriptionWithParent, getSubscriptionsForParent,
-  findFamilyByEmail, generateFamilyId, createFamily
+  findFamilyByEmail, generateFamilyId, createFamily,
+  hasPartnerEverLoggedIn
 } from "./src/db";
 import webpush from 'web-push';
 import { format, subDays } from 'date-fns';
@@ -257,6 +259,29 @@ setInterval(() => {
   }
 }, 60000);
 
+// ─── Input validation helpers ────────────────────────────────────────────────
+
+const MAX_NAME_LENGTH = 30;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+function isValidEmail(email: string): boolean {
+  return typeof email === 'string' && EMAIL_REGEX.test(email.trim());
+}
+
+function isValidTime(time: string): boolean {
+  return typeof time === 'string' && TIME_REGEX.test(time.trim());
+}
+
+/** Trim and cap a name to the allowed length */
+function sanitizeName(name: string): string {
+  return name.trim().slice(0, MAX_NAME_LENGTH);
+}
+
+function isValidRotationMode(mode: string): boolean {
+  return mode === ROTATION_ALTERNATE_NIGHTLY || mode === ROTATION_CONTINUE_FROM_LAST;
+}
+
 // ─── Server ─────────────────────────────────────────────────────────────────
 
 async function startServer() {
@@ -265,6 +290,9 @@ async function startServer() {
 
   app.use(express.json());
   app.use(cookieParser());
+
+  // Security headers (CSP disabled — Vite injects inline scripts in dev mode)
+  app.use(helmet({ contentSecurityPolicy: false }));
 
   const cookieOptions: express.CookieOptions = {
     httpOnly: true,
@@ -279,7 +307,9 @@ async function startServer() {
   app.post("/api/auth/email-lookup", async (req, res) => {
     try {
       const { email } = req.body;
-      if (!email) return res.status(400).json({ error: 'Missing email' });
+      if (!email || !isValidEmail(email)) {
+        return res.status(400).json({ error: 'Please enter a valid email address' });
+      }
 
       const normalizedEmail = email.trim().toLowerCase();
       const result = findFamilyByEmail(normalizedEmail);
@@ -306,9 +336,25 @@ async function startServer() {
       if (!email || !name || !partnerName || !partnerEmail) {
         return res.status(400).json({ error: 'Missing required fields' });
       }
+      if (!isValidEmail(email) || !isValidEmail(partnerEmail)) {
+        return res.status(400).json({ error: 'Please enter valid email addresses' });
+      }
 
       const normalizedEmail = email.trim().toLowerCase();
       const normalizedPartnerEmail = partnerEmail.trim().toLowerCase();
+
+      if (normalizedEmail === normalizedPartnerEmail) {
+        return res.status(400).json({ error: 'Your email and your partner\'s email must be different' });
+      }
+
+      const safeName = sanitizeName(name);
+      const safePartnerName = sanitizeName(partnerName);
+      if (!safeName || !safePartnerName) {
+        return res.status(400).json({ error: 'Names cannot be empty' });
+      }
+
+      const safeBedtime = bedtime && isValidTime(bedtime) ? bedtime : '22:00';
+      const safeWakeTime = wakeTime && isValidTime(wakeTime) ? wakeTime : '07:00';
 
       // Check if either email is already registered
       const existing = findFamilyByEmail(normalizedEmail);
@@ -324,21 +370,21 @@ async function startServer() {
       const familyId = generateFamilyId();
       createFamily(
         familyId,
-        name.trim(),
+        safeName,
         normalizedEmail,
-        partnerName.trim(),
+        safePartnerName,
         normalizedPartnerEmail,
-        bedtime || '22:00',
-        wakeTime || '07:00',
+        safeBedtime,
+        safeWakeTime,
         firstTurnIndex ?? 0
       );
 
       // Send magic link to the acting parent (always parent1 / index 0)
       const token = createMagicLink(familyId, 0, normalizedEmail);
-      await sendMagicLinkEmail(normalizedEmail, token, name.trim());
+      await sendMagicLinkEmail(normalizedEmail, token, safeName);
 
       // Send invite email to partner
-      await sendInviteEmail(normalizedPartnerEmail, partnerName.trim(), name.trim());
+      await sendInviteEmail(normalizedPartnerEmail, safePartnerName, safeName);
 
       res.json({ success: true });
     } catch (error: any) {
@@ -350,7 +396,9 @@ async function startServer() {
   app.post("/api/auth/request-link", async (req, res) => {
     try {
       const { email } = req.body;
-      if (!email) return res.status(400).json({ error: 'Missing email' });
+      if (!email || !isValidEmail(email)) {
+        return res.status(400).json({ error: 'Please enter a valid email address' });
+      }
 
       const normalizedEmail = email.trim().toLowerCase();
       const result = findFamilyByEmail(normalizedEmail);
@@ -394,8 +442,10 @@ async function startServer() {
       const settings: any = getSettings(familyId);
       const parentName = parentIndex === 0 ? settings.parent1_name : settings.parent2_name;
       const partnerName = parentIndex === 0 ? settings.parent2_name : settings.parent1_name;
+      const partnerIndex = parentIndex === PARENT_1 ? PARENT_2 : PARENT_1;
+      const partnerHasJoined = hasPartnerEverLoggedIn(familyId, partnerIndex);
 
-      res.json({ familyId, parentIndex, parentName, partnerName });
+      res.json({ familyId, parentIndex, parentName, partnerName, partnerHasJoined });
     } catch (error: any) {
       console.error("Error in /api/auth/me:", error);
       res.status(500).json({ error: error.message });
@@ -469,7 +519,18 @@ async function startServer() {
     try {
       const familyId = (req as any).familyId;
       const { parent1, parent2, bedtime, wakeTime, rotationMode } = req.body;
-      updateSettings(familyId, parent1, parent2, bedtime, wakeTime ?? '07:00', rotationMode);
+
+      // Validate and sanitize inputs
+      const safeName1 = parent1 ? sanitizeName(parent1) : undefined;
+      const safeName2 = parent2 ? sanitizeName(parent2) : undefined;
+      if (safeName1 !== undefined && !safeName1) return res.status(400).json({ error: 'Parent 1 name cannot be empty' });
+      if (safeName2 !== undefined && !safeName2) return res.status(400).json({ error: 'Parent 2 name cannot be empty' });
+
+      const safeBedtime = bedtime && isValidTime(bedtime) ? bedtime : '22:00';
+      const safeWakeTime = wakeTime && isValidTime(wakeTime) ? wakeTime : '07:00';
+      const safeRotation = rotationMode && isValidRotationMode(rotationMode) ? rotationMode : ROTATION_ALTERNATE_NIGHTLY;
+
+      updateSettings(familyId, safeName1 || '', safeName2 || '', safeBedtime, safeWakeTime, safeRotation);
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error in /api/settings:", error);
@@ -551,6 +612,30 @@ async function startServer() {
       res.status(201).json({});
     } catch (error: any) {
       console.error("Error in /api/subscribe:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/resend-invite", authenticateRequest, async (req, res) => {
+    try {
+      const familyId = (req as any).familyId;
+      const parentIndex = (req as any).parentIndex;
+      const settings: any = getSettings(familyId);
+
+      // Determine the partner's info based on who is making the request
+      const partnerIndex = parentIndex === PARENT_1 ? PARENT_2 : PARENT_1;
+      const partnerEmail = partnerIndex === PARENT_1 ? settings.parent1_email : settings.parent2_email;
+      const partnerName = parentNameByIndex(settings, partnerIndex);
+      const myName = parentNameByIndex(settings, parentIndex);
+
+      if (!partnerEmail) {
+        return res.status(400).json({ error: 'No email on file for your partner' });
+      }
+
+      await sendInviteEmail(partnerEmail, partnerName, myName);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error in /api/resend-invite:", error);
       res.status(500).json({ error: error.message });
     }
   });

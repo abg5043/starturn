@@ -91,7 +91,7 @@ export function JournalModal({ onClose }: JournalModalProps) {
         transition={{ type: 'spring', damping: 28, stiffness: 280 }}
         onClick={e => e.stopPropagation()}
         className="bg-slate-900 border border-white/10 rounded-t-3xl w-full max-w-lg shadow-2xl relative overflow-hidden"
-        style={{ maxHeight: '85vh' }}
+        style={{ maxHeight: '92vh' }}
       >
         {/* Gradient top bar */}
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
@@ -112,7 +112,7 @@ export function JournalModal({ onClose }: JournalModalProps) {
         </div>
 
         {/* Scrollable list */}
-        <div className="overflow-y-auto px-6 pb-8" style={{ maxHeight: 'calc(85vh - 80px)' }}>
+        <div className="overflow-y-auto px-6 pb-8" style={{ maxHeight: 'calc(92vh - 80px)' }}>
           {loading ? (
             <div className="text-center text-indigo-300/50 py-12 text-sm animate-pulse">Loading...</div>
           ) : nights.length === 0 ? (
