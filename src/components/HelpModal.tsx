@@ -36,7 +36,7 @@ export function HelpModal({ onClose }: HelpModalProps) {
               <span className="font-semibold text-white">On Duty</span>
             </div>
             <p className="text-indigo-200/80 ml-6">
-              When it's your turn, tap "I'm Going In" when the baby wakes. Tap again when you're back in bed. The turn passes to your partner.
+              When it's your turn, tap "I'm Going In" when the child wakes. Tap again when you're back in bed. The turn passes to your partner.
             </p>
           </div>
 
