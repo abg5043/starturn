@@ -297,8 +297,16 @@ export const getSubscriptionsForParent = (familyId: string, parentIndex: number)
 // (including expired ones) or consumed magic link for their parent_index.
 
 export const hasPartnerEverLoggedIn = (familyId: string, partnerIndex: number): boolean => {
-  const row = db.prepare(
+  // Check consumed magic links (partner clicked their invite link)
+  const magicRow = db.prepare(
     'SELECT 1 FROM magic_links WHERE family_id = ? AND parent_index = ? AND used = 1 LIMIT 1'
   ).get(familyId, partnerIndex);
-  return !!row;
+  if (magicRow) return true;
+
+  // Also check if a session was ever created for the partner
+  // (covers cases where magic_links were cleaned up but a session exists)
+  const sessionRow = db.prepare(
+    'SELECT 1 FROM sessions WHERE family_id = ? AND parent_index = ? LIMIT 1'
+  ).get(familyId, partnerIndex);
+  return !!sessionRow;
 };
