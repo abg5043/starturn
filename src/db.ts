@@ -198,6 +198,16 @@ export const getJournal = (familyId: string) => {
   });
 };
 
+// Delete a single log entry by id, scoped to the family for safety
+export const deleteJournalEntry = (familyId: string, id: number) => {
+  db.prepare('DELETE FROM logs WHERE id = ? AND family_id = ?').run(id, familyId);
+};
+
+// Delete all log entries for a given night_date, scoped to the family
+export const clearJournalNight = (familyId: string, nightDate: string) => {
+  db.prepare('DELETE FROM logs WHERE family_id = ? AND night_date = ?').run(familyId, nightDate);
+};
+
 export const saveSubscription = (familyId: string, sub: any) => {
   db.prepare('INSERT OR REPLACE INTO subscriptions (endpoint, family_id, keys) VALUES (?, ?, ?)').run(sub.endpoint, familyId, JSON.stringify(sub.keys));
 };

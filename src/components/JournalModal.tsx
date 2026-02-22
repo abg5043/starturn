@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
-import { BookOpen, Moon, X, ArrowRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { BookOpen, Moon, X, ArrowRight, MoreHorizontal, Trash2, Pencil } from 'lucide-react';
 
 interface Trip {
   id: number;
@@ -30,10 +30,34 @@ function formatNightDate(nightDate: string): string {
   return date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
-function TripRow({ trip, isFirst }: { trip: Trip; isFirst: boolean }) {
+interface TripRowProps {
+  trip: Trip;
+  isFirst: boolean;
+  openMenuId: string | null;
+  confirmingId: string | null;
+  onMenuOpen: (id: string) => void;
+  onMenuClose: () => void;
+  onSetConfirming: (id: string) => void;
+  onDeleteEntry: (tripId: number, nightDate: string) => void;
+}
+
+function TripRow({
+  trip,
+  isFirst,
+  openMenuId,
+  confirmingId,
+  onMenuOpen,
+  onMenuClose,
+  onSetConfirming,
+  onDeleteEntry,
+}: TripRowProps) {
   const isSkip = trip.action === 'skipped_turn';
   const isTakeover = trip.action === 'took_over';
   const isOverride = isSkip || isTakeover;
+
+  const menuKey = `trip-${trip.id}`;
+  const isMenuOpen = openMenuId === menuKey;
+  const isConfirming = confirmingId === menuKey;
 
   const label = isSkip
     ? `${trip.parent_name} passed their turn`
@@ -42,29 +66,102 @@ function TripRow({ trip, isFirst }: { trip: Trip; isFirst: boolean }) {
     : trip.parent_name;
 
   return (
-    <div className={`flex items-start gap-3 py-1.5 ${isOverride ? 'opacity-60' : ''}`}>
-      <div className="w-5 mt-0.5 flex-shrink-0 flex items-center justify-center">
-        {isFirst && !isOverride ? (
-          <Moon className="w-3.5 h-3.5 text-indigo-300" />
-        ) : isOverride ? (
-          <ArrowRight className="w-3.5 h-3.5 text-indigo-400/60" />
-        ) : (
-          <span className="text-indigo-400/40 text-xs">·</span>
-        )}
-      </div>
-      <span className="text-xs text-indigo-300/70 w-16 flex-shrink-0 mt-0.5">
-        {formatTripTime(trip.timestamp)}
-      </span>
-      <span className={`text-sm ${isOverride ? 'text-indigo-200/50 italic' : 'text-indigo-100'}`}>
-        {label}
-      </span>
-    </div>
+    <AnimatePresence>
+      <motion.div
+        layout
+        exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+        transition={{ duration: 0.18 }}
+        className={`group flex items-start gap-3 py-1.5 relative ${isOverride ? 'opacity-60' : ''}`}
+      >
+        <div className="w-5 mt-0.5 flex-shrink-0 flex items-center justify-center">
+          {isFirst && !isOverride ? (
+            <Moon className="w-3.5 h-3.5 text-indigo-300" />
+          ) : isOverride ? (
+            <ArrowRight className="w-3.5 h-3.5 text-indigo-400/60" />
+          ) : (
+            <span className="text-indigo-400/40 text-xs">·</span>
+          )}
+        </div>
+        <span className="text-xs text-indigo-300/70 w-16 flex-shrink-0 mt-0.5">
+          {formatTripTime(trip.timestamp)}
+        </span>
+        <span className={`text-sm ${isOverride ? 'text-indigo-200/50 italic' : 'text-indigo-100'}`}>
+          {label}
+        </span>
+
+        {/* ··· button */}
+        <button
+          onClick={() => isMenuOpen ? onMenuClose() : onMenuOpen(menuKey)}
+          className={`ml-auto p-1 rounded-md text-indigo-400/30 hover:text-indigo-300 hover:bg-white/5 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 ${isMenuOpen ? 'opacity-60' : ''}`}
+          aria-label="Entry options"
+        >
+          <MoreHorizontal className="w-4 h-4" />
+        </button>
+
+        {/* Popover menu */}
+        <AnimatePresence>
+          {isMenuOpen && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: -4 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: -4 }}
+              transition={{ duration: 0.1 }}
+              className="absolute right-0 top-6 z-20 bg-slate-800 border border-white/10 rounded-xl shadow-xl overflow-hidden min-w-[160px]"
+            >
+              {!isConfirming ? (
+                <>
+                  {/* Edit — scaffolded for future use */}
+                  <button
+                    disabled
+                    className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-indigo-300/50 cursor-not-allowed"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    Edit entry
+                    <span className="text-xs text-indigo-400/30 ml-auto">(soon)</span>
+                  </button>
+                  {/* Delete */}
+                  <button
+                    onClick={() => onSetConfirming(menuKey)}
+                    className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-rose-400 hover:bg-rose-500/10 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Delete entry
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-indigo-200/70 px-4 pt-3 pb-1">Delete this entry?</p>
+                  <div className="flex">
+                    <button
+                      onClick={onMenuClose}
+                      className="flex-1 px-4 py-2.5 text-sm text-indigo-300 hover:bg-white/5 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => onDeleteEntry(trip.id, trip.night_date)}
+                      className="flex-1 px-4 py-2.5 text-sm text-rose-400 hover:bg-rose-500/10 transition-colors"
+                    >
+                      Yes, delete
+                    </button>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </AnimatePresence>
   );
 }
 
 export function JournalModal({ onClose }: JournalModalProps) {
   const [nights, setNights] = useState<Night[]>([]);
   const [loading, setLoading] = useState(true);
+  // Tracks which ··· menu is open: "trip-{id}" or "night-{nightDate}"
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  // Tracks which item is in "Are you sure?" state
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/api/journal')
@@ -75,6 +172,45 @@ export function JournalModal({ onClose }: JournalModalProps) {
       })
       .catch(() => setLoading(false));
   }, []);
+
+  const closeMenu = () => {
+    setOpenMenuId(null);
+    setConfirmingId(null);
+  };
+
+  const openMenu = (id: string) => {
+    setOpenMenuId(id);
+    setConfirmingId(null);
+  };
+
+  const handleDeleteEntry = async (tripId: number, nightDate: string) => {
+    try {
+      const res = await fetch(`/api/journal/entry/${tripId}`, { method: 'DELETE' });
+      if (!res.ok) return;
+      // Remove entry from local state; remove the night entirely if no trips remain
+      setNights(prev =>
+        prev
+          .map(night =>
+            night.night_date === nightDate
+              ? { ...night, trips: night.trips.filter(t => t.id !== tripId) }
+              : night
+          )
+          .filter(night => night.trips.length > 0)
+      );
+    } finally {
+      closeMenu();
+    }
+  };
+
+  const handleClearNight = async (nightDate: string) => {
+    try {
+      const res = await fetch(`/api/journal/night/${nightDate}`, { method: 'DELETE' });
+      if (!res.ok) return;
+      setNights(prev => prev.filter(night => night.night_date !== nightDate));
+    } finally {
+      closeMenu();
+    }
+  };
 
   return (
     <motion.div
@@ -124,6 +260,9 @@ export function JournalModal({ onClose }: JournalModalProps) {
           ) : (
             <div className="space-y-4">
               {nights.map(night => {
+                const nightMenuKey = `night-${night.night_date}`;
+                const isNightMenuOpen = openMenuId === nightMenuKey;
+                const isNightConfirming = confirmingId === nightMenuKey;
                 const firstActualTrip = night.trips.find(
                   t => t.action === 'completed_turn' || t.action === 'took_over'
                 );
@@ -132,6 +271,7 @@ export function JournalModal({ onClose }: JournalModalProps) {
                     key={night.night_date}
                     className="bg-white/5 border border-white/5 rounded-2xl p-4"
                   >
+                    {/* Night card header */}
                     <div className="flex items-start justify-between mb-3">
                       <div>
                         <div className="font-semibold text-white text-sm">
@@ -143,8 +283,62 @@ export function JournalModal({ onClose }: JournalModalProps) {
                           </div>
                         )}
                       </div>
-                      <div className="text-xs text-indigo-400/40 bg-white/5 rounded-full px-2 py-1">
-                        {night.trips.filter(t => t.action === 'completed_turn' || t.action === 'took_over').length} trips
+
+                      {/* Trips count pill + ··· menu */}
+                      <div className="flex items-center gap-1.5 relative">
+                        <div className="text-xs text-indigo-400/40 bg-white/5 rounded-full px-2 py-1">
+                          {night.trips.filter(t => t.action === 'completed_turn' || t.action === 'took_over').length} trips
+                        </div>
+                        <button
+                          onClick={() => isNightMenuOpen ? closeMenu() : openMenu(nightMenuKey)}
+                          className="p-1.5 rounded-lg text-indigo-400/40 hover:text-indigo-300 hover:bg-white/5 transition-colors"
+                          aria-label="Night options"
+                        >
+                          <MoreHorizontal className="w-4 h-4" />
+                        </button>
+
+                        {/* Night card popover */}
+                        <AnimatePresence>
+                          {isNightMenuOpen && (
+                            <motion.div
+                              initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                              animate={{ opacity: 1, scale: 1, y: 0 }}
+                              exit={{ opacity: 0, scale: 0.95, y: -4 }}
+                              transition={{ duration: 0.1 }}
+                              className="absolute right-0 top-8 z-20 bg-slate-800 border border-white/10 rounded-xl shadow-xl overflow-hidden min-w-[160px]"
+                            >
+                              {!isNightConfirming ? (
+                                <button
+                                  onClick={() => setConfirmingId(nightMenuKey)}
+                                  className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-rose-400 hover:bg-rose-500/10 transition-colors"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  Clear night
+                                </button>
+                              ) : (
+                                <>
+                                  <p className="text-xs text-indigo-200/70 px-4 pt-3 pb-1">
+                                    Clear all entries for this night?
+                                  </p>
+                                  <div className="flex">
+                                    <button
+                                      onClick={closeMenu}
+                                      className="flex-1 px-4 py-2.5 text-sm text-indigo-300 hover:bg-white/5 transition-colors"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      onClick={() => handleClearNight(night.night_date)}
+                                      className="flex-1 px-4 py-2.5 text-sm text-rose-400 hover:bg-rose-500/10 transition-colors"
+                                    >
+                                      Yes, clear
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </div>
                     </div>
 
@@ -154,6 +348,12 @@ export function JournalModal({ onClose }: JournalModalProps) {
                           <TripRow
                             trip={trip}
                             isFirst={trip.id === firstActualTrip?.id}
+                            openMenuId={openMenuId}
+                            confirmingId={confirmingId}
+                            onMenuOpen={openMenu}
+                            onMenuClose={closeMenu}
+                            onSetConfirming={setConfirmingId}
+                            onDeleteEntry={handleDeleteEntry}
                           />
                         </React.Fragment>
                       ))}
@@ -164,6 +364,14 @@ export function JournalModal({ onClose }: JournalModalProps) {
             </div>
           )}
         </div>
+
+        {/* Transparent overlay to dismiss open menus on click-outside */}
+        {openMenuId && (
+          <div
+            className="fixed inset-0 z-10"
+            onClick={closeMenu}
+          />
+        )}
       </motion.div>
     </motion.div>
   );

@@ -10,6 +10,7 @@ import {
   getSettings, updateSettings, toggleTurn, logAction, getLogs,
   saveSubscription, getSubscriptions, getVapidKeys, saveVapidKeys,
   getAllSettings, getFirstTripOfNight, setTurnIndex, getJournal,
+  deleteJournalEntry, clearJournalNight,
   createMagicLink, consumeMagicLink, createSession, getSession,
   deleteSession, cleanupExpired, getParentEmail,
   saveSubscriptionWithParent, getSubscriptionsForParent,
@@ -599,6 +600,36 @@ async function startServer() {
       res.json({ nights });
     } catch (error: any) {
       console.error("Error in /api/journal:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete a single journal entry
+  app.delete("/api/journal/entry/:id", authenticateRequest, (req, res) => {
+    try {
+      const familyId = (req as any).familyId;
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
+      deleteJournalEntry(familyId, id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error in DELETE /api/journal/entry/:id:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Clear all entries for a specific night
+  app.delete("/api/journal/night/:nightDate", authenticateRequest, (req, res) => {
+    try {
+      const familyId = (req as any).familyId;
+      const { nightDate } = req.params;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(nightDate)) {
+        return res.status(400).json({ error: 'Invalid date format' });
+      }
+      clearJournalNight(familyId, nightDate);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error in DELETE /api/journal/night/:nightDate:", error);
       res.status(500).json({ error: error.message });
     }
   });
