@@ -1,10 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
-import { Settings, Moon, Check, Bell, Star, BookOpen, Mail } from 'lucide-react';
+import { Settings, Moon, Check, Bell, Star, BookOpen, Mail, ArrowRightLeft, HelpCircle, Smartphone } from 'lucide-react';
 import { StarryBackground } from './components/StarryBackground';
 import { SetupScreen } from './components/SetupScreen';
 import { JournalModal } from './components/JournalModal';
+import { HelpModal } from './components/HelpModal';
+
+// ─── Rotation mode constants ───────────────────────────────────────────────
+const ROTATION_ALTERNATE_NIGHTLY = 'alternate_nightly';
+const ROTATION_CONTINUE_FROM_LAST = 'continue_from_last';
 
 // Types
 type AppState = {
@@ -14,6 +19,7 @@ type AppState = {
     bedtime: string;
     wake_time: string;
     current_turn_index: number;
+    rotation_mode: string;
     is_setup_complete: number;
   };
   logs: Array<{
@@ -83,6 +89,7 @@ export default function App() {
   const [state, setState] = useState<AppState | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showJournal, setShowJournal] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const showSettingsRef = useRef(false);
   const [pushSupported, setPushSupported] = useState(false);
 
@@ -100,6 +107,7 @@ export default function App() {
   const [p2Name, setP2Name] = useState('');
   const [bedtime, setBedtime] = useState('');
   const [wakeTime, setWakeTime] = useState('');
+  const [rotationMode, setRotationMode] = useState(ROTATION_ALTERNATE_NIGHTLY);
 
   // Keep ref in sync
   useEffect(() => {
@@ -178,6 +186,7 @@ export default function App() {
         setP2Name(data.settings.parent2_name);
         setBedtime(data.settings.bedtime);
         setWakeTime(data.settings.wake_time || '07:00');
+        setRotationMode(data.settings.rotation_mode || ROTATION_ALTERNATE_NIGHTLY);
       }
       return data;
     } catch (e) {
@@ -222,7 +231,7 @@ export default function App() {
     const response = await fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parent1: p1Name, parent2: p2Name, bedtime, wakeTime })
+      body: JSON.stringify({ parent1: p1Name, parent2: p2Name, bedtime, wakeTime, rotationMode })
     });
 
     if (!response.ok) {
@@ -391,11 +400,46 @@ export default function App() {
                 </div>
               </div>
               <h1 className="text-4xl font-bold mb-2">StarTurn</h1>
+
               {savedName ? (
+                // Returning user — skip the explainer, they already know the app
                 <p className="text-indigo-200 mb-8">Welcome back, {savedName}! Enter your email to sign in.</p>
               ) : (
-                <p className="text-indigo-200 mb-8">Enter your email to get started.</p>
+                // First-time visitor — explain what this app is and why it exists
+                <>
+                  <p className="text-indigo-200 mb-6">
+                    Take turns on night duty&mdash;<br />so both parents can rest.
+                  </p>
+                  <div className="bg-white/5 border border-white/10 rounded-xl px-5 py-4 mb-8 text-left space-y-3">
+                    <div className="flex items-center gap-3">
+                      <Star className="w-4 h-4 text-yellow-200 fill-yellow-200 shrink-0" />
+                      <span className="text-sm text-indigo-100">One parent is on duty</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Moon className="w-4 h-4 text-indigo-300 shrink-0" />
+                      <span className="text-sm text-indigo-100">The other rests easy</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <ArrowRightLeft className="w-4 h-4 text-indigo-300 shrink-0" />
+                      <span className="text-sm text-indigo-100">Swap with one tap</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Smartphone className="w-4 h-4 text-indigo-300 shrink-0" />
+                      <span className="text-sm text-indigo-100">Syncs across both phones</span>
+                    </div>
+                  </div>
+                </>
               )}
+
+              {/* Sign-in divider (only shown for new visitors, keeps layout clean) */}
+              {!savedName && (
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="flex-1 h-px bg-white/10" />
+                  <span className="text-xs text-indigo-300/60 uppercase tracking-wider">Sign in</span>
+                  <div className="flex-1 h-px bg-white/10" />
+                </div>
+              )}
+
               <form onSubmit={handleEmailSubmit} className="space-y-4">
                 <input
                   type="email"
@@ -476,6 +520,13 @@ export default function App() {
             className="text-xs font-medium text-indigo-300 hover:text-white px-3 py-2 rounded-full hover:bg-white/10 transition-colors"
           >
             Logout
+          </button>
+          <button
+            onClick={() => setShowHelp(true)}
+            className="p-2 rounded-full hover:bg-white/10 transition-colors backdrop-blur-sm"
+            aria-label="Help"
+          >
+            <HelpCircle className="w-6 h-6 text-indigo-300" />
           </button>
           <button
             onClick={() => setShowSettings(true)}
@@ -821,6 +872,63 @@ export default function App() {
                   />
                 </div>
 
+                {/* ─── Night Rotation Mode ─────────────────────────────── */}
+                <div>
+                  <label className="block text-xs font-medium text-indigo-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <ArrowRightLeft className="w-3.5 h-3.5" />
+                    Night Rotation
+                  </label>
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setRotationMode(ROTATION_ALTERNATE_NIGHTLY)}
+                      className={`w-full text-left px-4 py-3 rounded-xl border transition-colors ${
+                        rotationMode === ROTATION_ALTERNATE_NIGHTLY
+                          ? 'border-indigo-500 bg-indigo-500/15'
+                          : 'border-white/10 bg-white/5 hover:bg-white/10'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                          rotationMode === ROTATION_ALTERNATE_NIGHTLY ? 'border-indigo-400' : 'border-white/30'
+                        }`}>
+                          {rotationMode === ROTATION_ALTERNATE_NIGHTLY && (
+                            <div className="w-2 h-2 rounded-full bg-indigo-400" />
+                          )}
+                        </div>
+                        <span className="text-sm font-medium text-white">Alternate nightly</span>
+                      </div>
+                      <p className="text-xs text-indigo-300/70 mt-1 ml-6">
+                        Swap who goes first each night, regardless of mid-night switches.
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setRotationMode(ROTATION_CONTINUE_FROM_LAST)}
+                      className={`w-full text-left px-4 py-3 rounded-xl border transition-colors ${
+                        rotationMode === ROTATION_CONTINUE_FROM_LAST
+                          ? 'border-indigo-500 bg-indigo-500/15'
+                          : 'border-white/10 bg-white/5 hover:bg-white/10'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                          rotationMode === ROTATION_CONTINUE_FROM_LAST ? 'border-indigo-400' : 'border-white/30'
+                        }`}>
+                          {rotationMode === ROTATION_CONTINUE_FROM_LAST && (
+                            <div className="w-2 h-2 rounded-full bg-indigo-400" />
+                          )}
+                        </div>
+                        <span className="text-sm font-medium text-white">Pick up where we left off</span>
+                      </div>
+                      <p className="text-xs text-indigo-300/70 mt-1 ml-6">
+                        Whoever is next after the last trip stays next tomorrow.
+                      </p>
+                    </button>
+                  </div>
+                </div>
+
                 {pushSupported && (
                   <button
                     onClick={subscribeToPush}
@@ -847,6 +955,13 @@ export default function App() {
       <AnimatePresence>
         {showJournal && (
           <JournalModal onClose={() => setShowJournal(false)} />
+        )}
+      </AnimatePresence>
+
+      {/* Help Modal */}
+      <AnimatePresence>
+        {showHelp && (
+          <HelpModal onClose={() => setShowHelp(false)} />
         )}
       </AnimatePresence>
     </div>

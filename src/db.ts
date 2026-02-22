@@ -67,6 +67,7 @@ try { db.exec(`ALTER TABLE logs ADD COLUMN night_date TEXT`); } catch (_) {}
 try { db.exec(`ALTER TABLE settings ADD COLUMN parent1_email TEXT`); } catch (_) {}
 try { db.exec(`ALTER TABLE settings ADD COLUMN parent2_email TEXT`); } catch (_) {}
 try { db.exec(`ALTER TABLE subscriptions ADD COLUMN parent_index INTEGER DEFAULT -1`); } catch (_) {}
+try { db.exec(`ALTER TABLE settings ADD COLUMN rotation_mode TEXT DEFAULT 'alternate_nightly'`); } catch (_) {}
 
 // Email indexes for lookup
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_settings_parent1_email ON settings(parent1_email)`); } catch (_) {}
@@ -97,22 +98,25 @@ export const updateSettings = (
   parent2: string,
   bedtime: string,
   wakeTime: string,
+  rotationMode?: string,
   firstTurnIndex?: number,
   parent1Email?: string,
   parent2Email?: string
 ) => {
+  const safeRotationMode = rotationMode || 'alternate_nightly';
+
   if (firstTurnIndex !== undefined && parent1Email !== undefined && parent2Email !== undefined) {
     db.prepare(
-      'UPDATE settings SET parent1_name = ?, parent2_name = ?, bedtime = ?, wake_time = ?, is_setup_complete = 1, current_turn_index = ?, parent1_email = ?, parent2_email = ? WHERE family_id = ?'
-    ).run(parent1, parent2, bedtime, wakeTime, firstTurnIndex, parent1Email, parent2Email, familyId);
+      'UPDATE settings SET parent1_name = ?, parent2_name = ?, bedtime = ?, wake_time = ?, rotation_mode = ?, is_setup_complete = 1, current_turn_index = ?, parent1_email = ?, parent2_email = ? WHERE family_id = ?'
+    ).run(parent1, parent2, bedtime, wakeTime, safeRotationMode, firstTurnIndex, parent1Email, parent2Email, familyId);
   } else if (firstTurnIndex !== undefined) {
     db.prepare(
-      'UPDATE settings SET parent1_name = ?, parent2_name = ?, bedtime = ?, wake_time = ?, is_setup_complete = 1, current_turn_index = ? WHERE family_id = ?'
-    ).run(parent1, parent2, bedtime, wakeTime, firstTurnIndex, familyId);
+      'UPDATE settings SET parent1_name = ?, parent2_name = ?, bedtime = ?, wake_time = ?, rotation_mode = ?, is_setup_complete = 1, current_turn_index = ? WHERE family_id = ?'
+    ).run(parent1, parent2, bedtime, wakeTime, safeRotationMode, firstTurnIndex, familyId);
   } else {
     db.prepare(
-      'UPDATE settings SET parent1_name = ?, parent2_name = ?, bedtime = ?, wake_time = ?, is_setup_complete = 1 WHERE family_id = ?'
-    ).run(parent1, parent2, bedtime, wakeTime, familyId);
+      'UPDATE settings SET parent1_name = ?, parent2_name = ?, bedtime = ?, wake_time = ?, rotation_mode = ?, is_setup_complete = 1 WHERE family_id = ?'
+    ).run(parent1, parent2, bedtime, wakeTime, safeRotationMode, familyId);
   }
 };
 

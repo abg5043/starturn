@@ -7,3 +7,9 @@ coverage/
 .env*
 !.env.example
 data/
+
+# Claude Code temporary working directory files
+tmpclaude-*-cwd
+
+# Windows null device artifact (created by accidental `> nul` redirects)
+nul

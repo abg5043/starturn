@@ -20,6 +20,14 @@ import { format, subDays } from 'date-fns';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// ─── Parent index constants (readable alternatives to raw 0/1) ─────────────
+const PARENT_1 = 0;
+const PARENT_2 = 1;
+
+// ─── Rotation mode constants ───────────────────────────────────────────────
+const ROTATION_ALTERNATE_NIGHTLY = 'alternate_nightly';
+const ROTATION_CONTINUE_FROM_LAST = 'continue_from_last';
+
 // ─── Resend (email) ─────────────────────────────────────────────────────────
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
@@ -100,6 +108,16 @@ webpush.setVapidDetails(
   vapidKeys.publicKey,
   vapidKeys.privateKey
 );
+
+// ─── Helper: resolve parent name from index ───────────────────────────────
+
+function parentNameByIndex(settings: any, index: number): string {
+  return index === PARENT_1 ? settings.parent1_name : settings.parent2_name;
+}
+
+function oppositeIndex(index: number): number {
+  return index === PARENT_1 ? PARENT_2 : PARENT_1;
+}
 
 // ─── Night context helper ───────────────────────────────────────────────────
 function computeNightContext(now: Date, bedtime: string, wakeTime: string): { isNight: boolean; nightDate: string } {
@@ -205,19 +223,33 @@ setInterval(() => {
         sendPushToFamily(setting.family_id, msg.title, msg.body);
       }
 
-      // Wakeup: rotate turn for upcoming night based on last night
+      // ─── Wake-time rotation: decide who goes first tonight ─────────────
       if (wakeTime === currentTime) {
-        const { nightDate: lastNightDate } = computeNightContext(subDays(now, 1), setting.bedtime, wakeTime);
-        const firstTrip = getFirstTripOfNight(setting.family_id, lastNightDate);
+        const rotationMode = setting.rotation_mode || ROTATION_ALTERNATE_NIGHTLY;
+        const shouldAlternateNightly = rotationMode !== ROTATION_CONTINUE_FROM_LAST;
 
-        if (firstTrip) {
-          const firstPersonIndex = firstTrip.parent_name === setting.parent1_name ? 0 : 1;
-          const newIndex = firstPersonIndex === 0 ? 1 : 0;
-          setTurnIndex(setting.family_id, newIndex);
-          const nextParent = newIndex === 0 ? setting.parent1_name : setting.parent2_name;
-          const msg = pickRandom(morningMessages)(nextParent);
-          sendPushToFamily(setting.family_id, msg.title, msg.body);
+        if (shouldAlternateNightly) {
+          // "Alternate nightly" mode:
+          // Regardless of how many mid-night swaps happened,
+          // the parent who went first LAST night goes SECOND tonight.
+          const lastNightDate = computeNightContext(subDays(now, 1), setting.bedtime, wakeTime).nightDate;
+          const firstTripLastNight = getFirstTripOfNight(setting.family_id, lastNightDate);
+
+          if (firstTripLastNight) {
+            const parentWhoWentFirstLastNight = firstTripLastNight.parent_name;
+            const indexWhoWentFirstLastNight = parentWhoWentFirstLastNight === setting.parent1_name ? PARENT_1 : PARENT_2;
+            const tonightFirstIndex = oppositeIndex(indexWhoWentFirstLastNight);
+            const parentWhoGoesFirstTonight = parentNameByIndex(setting, tonightFirstIndex);
+
+            setTurnIndex(setting.family_id, tonightFirstIndex);
+
+            const morningMsg = pickRandom(morningMessages)(parentWhoGoesFirstTonight);
+            sendPushToFamily(setting.family_id, morningMsg.title, morningMsg.body);
+          }
         }
+        // "Continue from last" mode:
+        // Do nothing. current_turn_index already reflects whoever
+        // is next after last night's final trip. No reset needed.
       }
     });
   } catch (error) {
@@ -397,18 +429,32 @@ async function startServer() {
       const wakeTime = settings.wake_time || '07:00';
       const { isNight, nightDate } = computeNightContext(new Date(), settings.bedtime, wakeTime);
 
+      // ─── Determine who goes first tonight (shown during daytime) ───────
       let tonightFirstParent: string | null = null;
+
       if (!isNight) {
-        const lastNightDate = format(subDays(new Date(), 1), 'yyyy-MM-dd');
-        const firstTrip = getFirstTripOfNight(familyId, lastNightDate);
-        if (firstTrip) {
-          tonightFirstParent = firstTrip.parent_name === settings.parent1_name
-            ? settings.parent2_name
-            : settings.parent1_name;
+        const rotationMode = settings.rotation_mode || ROTATION_ALTERNATE_NIGHTLY;
+        const shouldAlternateNightly = rotationMode !== ROTATION_CONTINUE_FROM_LAST;
+
+        if (shouldAlternateNightly) {
+          // Look at who went first last night and pick the opposite parent.
+          const lastNightDate = format(subDays(new Date(), 1), 'yyyy-MM-dd');
+          const firstTripLastNight = getFirstTripOfNight(familyId, lastNightDate);
+
+          if (firstTripLastNight) {
+            const parentWhoWentFirstLastNight = firstTripLastNight.parent_name;
+            tonightFirstParent = parentWhoWentFirstLastNight === settings.parent1_name
+              ? settings.parent2_name
+              : settings.parent1_name;
+          } else {
+            // No trips logged last night — fall back to current index.
+            tonightFirstParent = parentNameByIndex(settings, settings.current_turn_index);
+          }
         } else {
-          tonightFirstParent = settings.current_turn_index === 0
-            ? settings.parent1_name
-            : settings.parent2_name;
+          // "Continue from last" mode:
+          // Just read current_turn_index directly — it already carries
+          // forward from wherever last night's final toggle left it.
+          tonightFirstParent = parentNameByIndex(settings, settings.current_turn_index);
         }
       }
 
@@ -422,8 +468,8 @@ async function startServer() {
   app.post("/api/settings", authenticateRequest, (req, res) => {
     try {
       const familyId = (req as any).familyId;
-      const { parent1, parent2, bedtime, wakeTime } = req.body;
-      updateSettings(familyId, parent1, parent2, bedtime, wakeTime ?? '07:00');
+      const { parent1, parent2, bedtime, wakeTime, rotationMode } = req.body;
+      updateSettings(familyId, parent1, parent2, bedtime, wakeTime ?? '07:00', rotationMode);
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error in /api/settings:", error);
