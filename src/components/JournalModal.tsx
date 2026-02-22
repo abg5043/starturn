@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BookOpen, Moon, X, ArrowRight, MoreHorizontal, Trash2, Pencil } from 'lucide-react';
 
@@ -66,13 +66,12 @@ function TripRow({
     : trip.parent_name;
 
   return (
-    <AnimatePresence>
-      <motion.div
-        layout
-        exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-        transition={{ duration: 0.18 }}
-        className={`group flex items-start gap-3 py-1.5 relative ${isOverride ? 'opacity-60' : ''}`}
-      >
+    <motion.div
+      layout
+      exit={{ opacity: 0, height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0 }}
+      transition={{ duration: 0.18 }}
+      className={`group flex items-start gap-3 py-1.5 relative overflow-hidden ${isOverride ? 'opacity-60' : ''}`}
+    >
         <div className="w-5 mt-0.5 flex-shrink-0 flex items-center justify-center">
           {isFirst && !isOverride ? (
             <Moon className="w-3.5 h-3.5 text-indigo-300" />
@@ -151,7 +150,6 @@ function TripRow({
           )}
         </AnimatePresence>
       </motion.div>
-    </AnimatePresence>
   );
 }
 
@@ -343,9 +341,10 @@ export function JournalModal({ onClose }: JournalModalProps) {
                     </div>
 
                     <div className="border-t border-white/5 pt-2">
-                      {night.trips.map((trip: Trip) => (
-                        <React.Fragment key={trip.id}>
+                      <AnimatePresence>
+                        {night.trips.map((trip: Trip) => (
                           <TripRow
+                            key={trip.id}
                             trip={trip}
                             isFirst={trip.id === firstActualTrip?.id}
                             openMenuId={openMenuId}
@@ -355,8 +354,8 @@ export function JournalModal({ onClose }: JournalModalProps) {
                             onSetConfirming={setConfirmingId}
                             onDeleteEntry={handleDeleteEntry}
                           />
-                        </React.Fragment>
-                      ))}
+                        ))}
+                      </AnimatePresence>
                     </div>
                   </div>
                 );
@@ -369,7 +368,7 @@ export function JournalModal({ onClose }: JournalModalProps) {
         {openMenuId && (
           <div
             className="fixed inset-0 z-10"
-            onClick={closeMenu}
+            onClick={(e) => { e.stopPropagation(); closeMenu(); }}
           />
         )}
       </motion.div>

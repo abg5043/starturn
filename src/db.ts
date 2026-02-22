@@ -198,14 +198,18 @@ export const getJournal = (familyId: string) => {
   });
 };
 
-// Delete a single log entry by id, scoped to the family for safety
-export const deleteJournalEntry = (familyId: string, id: number) => {
-  db.prepare('DELETE FROM logs WHERE id = ? AND family_id = ?').run(id, familyId);
+// Delete a single log entry by id, scoped to the family for safety.
+// Returns the number of rows deleted (0 if not found or not owned by this family).
+export const deleteJournalEntry = (familyId: string, id: number): number => {
+  const result = db.prepare('DELETE FROM logs WHERE id = ? AND family_id = ?').run(id, familyId);
+  return result.changes;
 };
 
-// Delete all log entries for a given night_date, scoped to the family
-export const clearJournalNight = (familyId: string, nightDate: string) => {
-  db.prepare('DELETE FROM logs WHERE family_id = ? AND night_date = ?').run(familyId, nightDate);
+// Delete all log entries for a given night_date, scoped to the family.
+// Returns the number of rows deleted (0 if the night had no entries).
+export const clearJournalNight = (familyId: string, nightDate: string): number => {
+  const result = db.prepare('DELETE FROM logs WHERE family_id = ? AND night_date = ?').run(familyId, nightDate);
+  return result.changes;
 };
 
 export const saveSubscription = (familyId: string, sub: any) => {
