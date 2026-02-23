@@ -911,7 +911,7 @@ export default function App() {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-slate-900 border border-white/10 rounded-3xl p-8 w-full max-w-sm shadow-2xl relative overflow-hidden"
+              className="bg-slate-900 border border-white/10 rounded-3xl px-8 pt-8 w-full max-w-sm shadow-2xl relative overflow-hidden max-h-[90vh] flex flex-col"
             >
               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
 
@@ -920,7 +920,7 @@ export default function App() {
                 Settings
               </h2>
 
-              <div className="space-y-4">
+              <div className="space-y-4 overflow-y-auto flex-1 pb-8">
                 <div>
                   <label className="block text-xs font-medium text-indigo-300 uppercase tracking-wider mb-1">Parent 1 Name</label>
                   <input
