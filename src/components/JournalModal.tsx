@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BookOpen, Moon, X, ArrowRight, MoreHorizontal, Trash2, Pencil } from 'lucide-react';
+import { BookOpen, Moon, X, ArrowRight, MoreHorizontal, Trash2, Pencil, Plus } from 'lucide-react';
 
 interface Trip {
   id: number;
@@ -30,6 +30,22 @@ function formatNightDate(nightDate: string): string {
   // nightDate is YYYY-MM-DD (the date bedtime started)
   const date = new Date(nightDate + 'T12:00:00'); // noon to avoid timezone offset issues
   return date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+}
+
+// Produce the last 7 days as selectable date options for the "log a wakeup" form.
+// Values are YYYY-MM-DD strings; labels are human-readable like "Yesterday (Fri, Jan 17)".
+function generatePastDateOptions(): Array<{ value: string; label: string }> {
+  const options = [];
+  const today = new Date();
+  for (let daysAgo = 0; daysAgo <= 6; daysAgo++) {
+    const date = new Date(today);
+    date.setDate(today.getDate() - daysAgo);
+    const value = date.toISOString().slice(0, 10);
+    const shortDate = date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+    const label = daysAgo === 0 ? `Today (${shortDate})` : daysAgo === 1 ? `Yesterday (${shortDate})` : shortDate;
+    options.push({ value, label });
+  }
+  return options;
 }
 
 interface TripRowProps {
@@ -224,6 +240,18 @@ export function JournalModal({ onClose, parent1Name, parent2Name }: JournalModal
   // The two parent names as a tuple for the edit dropdown
   const parentNames: [string, string] = [parent1Name, parent2Name];
 
+  // State for the "log a wakeup" inline form
+  const pastDateOptions = generatePastDateOptions();
+  const [showAddForm, setShowAddForm] = useState(false);
+  // Default to yesterday (index 1) — the most common "I forgot to log" scenario
+  const [addNightDate, setAddNightDate] = useState(pastDateOptions[1]?.value ?? pastDateOptions[0].value);
+  const [addParentName, setAddParentName] = useState('');
+  // Default time to the current browser time as HH:mm
+  const [addTime, setAddTime] = useState(() => {
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  });
+
   useEffect(() => {
     fetch('/api/journal')
       .then(r => r.json())
@@ -304,6 +332,52 @@ export function JournalModal({ onClose, parent1Name, parent2Name }: JournalModal
     }
   };
 
+  const handleAddWakeup = async () => {
+    if (!addParentName || !addNightDate || !addTime) return;
+
+    // Build an ISO timestamp from the user's chosen date + local time.
+    // new Date('YYYY-MM-DDTHH:mm:00') interprets the string as local time
+    // and toISOString() converts it to UTC — matching how live entries are stored.
+    const timestamp = new Date(`${addNightDate}T${addTime}:00`).toISOString();
+
+    const res = await fetch('/api/journal/entry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nightDate: addNightDate, parentName: addParentName, timestamp }),
+    });
+    if (!res.ok) return;
+
+    const newTrip: Trip = await res.json();
+
+    // Merge the new trip into local state.
+    // If a card for this night already exists, insert the trip in timestamp order.
+    // If not, create a new night card and sort it into the list by date descending.
+    setNights(prev => {
+      const existingNight = prev.find(n => n.night_date === addNightDate);
+      if (existingNight) {
+        // Insert the new trip in ascending timestamp order within the night
+        const updatedTrips = [...existingNight.trips, newTrip].sort(
+          (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        );
+        return prev.map(n =>
+          n.night_date === addNightDate ? { ...n, trips: updatedTrips } : n
+        );
+      } else {
+        // New night card — determine the first_parent from the new trip, then sort
+        const newNight: Night = {
+          night_date: addNightDate,
+          first_parent: newTrip.parent_name,
+          trips: [newTrip],
+        };
+        return [...prev, newNight].sort((a, b) => b.night_date.localeCompare(a.night_date));
+      }
+    });
+
+    // Reset form to defaults for the next entry
+    setAddParentName('');
+    setShowAddForm(false);
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -330,14 +404,84 @@ export function JournalModal({ onClose, parent1Name, parent2Name }: JournalModal
             <BookOpen className="w-5 h-5 text-indigo-400" />
             Night Journal
           </h2>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-full hover:bg-white/10 transition-colors text-indigo-300"
-            aria-label="Close journal"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setShowAddForm(prev => !prev)}
+              className={`p-2 rounded-full hover:bg-white/10 transition-colors ${showAddForm ? 'text-indigo-300 bg-white/10' : 'text-indigo-400/60'}`}
+              aria-label="Log a wakeup"
+            >
+              <Plus className="w-5 h-5" />
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-full hover:bg-white/10 transition-colors text-indigo-300"
+              aria-label="Close journal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
+
+        {/* "Log a wakeup" inline form — shown when the + button is tapped */}
+        <AnimatePresence>
+          {showAddForm && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.18 }}
+              className="overflow-hidden"
+            >
+              <div className="px-6 pb-4 flex flex-wrap gap-2 items-center border-b border-white/5">
+                {/* Date selector */}
+                <select
+                  aria-label="Night date"
+                  value={addNightDate}
+                  onChange={e => setAddNightDate(e.target.value)}
+                  className="text-sm bg-slate-700 border border-white/10 rounded-lg px-2 py-1.5 text-indigo-100 focus:outline-none focus:border-indigo-400 [color-scheme:dark]"
+                >
+                  {pastDateOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+                {/* Parent selector */}
+                <select
+                  aria-label="Parent for this wakeup"
+                  value={addParentName}
+                  onChange={e => setAddParentName(e.target.value)}
+                  className="text-sm bg-slate-700 border border-white/10 rounded-lg px-2 py-1.5 text-indigo-100 focus:outline-none focus:border-indigo-400"
+                >
+                  <option value="" disabled>Who got up?</option>
+                  {parentNames.map((name, index) => (
+                    <option key={index} value={name}>{name}</option>
+                  ))}
+                </select>
+                {/* Time picker */}
+                <input
+                  type="time"
+                  aria-label="Time of wakeup"
+                  value={addTime}
+                  onChange={e => setAddTime(e.target.value)}
+                  className="text-sm bg-slate-700 border border-white/10 rounded-lg px-2 py-1.5 text-indigo-100 focus:outline-none focus:border-indigo-400 [color-scheme:dark]"
+                />
+                {/* Submit */}
+                <button
+                  onClick={handleAddWakeup}
+                  disabled={!addParentName}
+                  className="text-sm font-medium text-indigo-300 hover:text-white bg-indigo-500/20 hover:bg-indigo-500/40 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Log wakeup
+                </button>
+                <button
+                  onClick={() => setShowAddForm(false)}
+                  className="text-xs text-indigo-400/60 hover:text-indigo-300 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Scrollable list */}
         <div className="overflow-y-auto px-6 pb-8" style={{ maxHeight: 'calc(92vh - 80px)' }}>

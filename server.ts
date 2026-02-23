@@ -10,7 +10,7 @@ import {
   getSettings, updateSettings, toggleTurn, logAction, getLogs,
   saveSubscription, getSubscriptions, getVapidKeys, saveVapidKeys,
   getAllSettings, getFirstTripOfNight, setTurnIndex, getJournal,
-  deleteJournalEntry, clearJournalNight, updateJournalEntry,
+  deleteJournalEntry, clearJournalNight, updateJournalEntry, insertJournalEntry,
   createMagicLink, consumeMagicLink, createSession, getSession,
   deleteSession, cleanupExpired, getParentEmail,
   saveSubscriptionWithParent, getSubscriptionsForParent,
@@ -782,6 +782,42 @@ async function startServer() {
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error in DELETE /api/journal/night/:nightDate:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Manually log a wakeup for a past night (or add to an existing night's entries).
+  // The browser sends a full ISO timestamp it constructed from the user's chosen date + time,
+  // so we store the exact moment the parent says the wakeup occurred rather than "now".
+  app.post("/api/journal/entry", authenticateRequest, (req, res) => {
+    try {
+      const familyId = (req as any).familyId;
+      const { nightDate, parentName, timestamp } = req.body;
+
+      // Validate nightDate is YYYY-MM-DD
+      if (!nightDate || !/^\d{4}-\d{2}-\d{2}$/.test(nightDate)) {
+        return res.status(400).json({ error: 'Invalid nightDate format' });
+      }
+      // Validate timestamp is a parseable ISO string
+      if (!timestamp || isNaN(Date.parse(timestamp))) {
+        return res.status(400).json({ error: 'Invalid timestamp' });
+      }
+      // Validate parentName is one of the two family members (prevents arbitrary injection)
+      if (!parentName || typeof parentName !== 'string' || parentName.trim() === '') {
+        return res.status(400).json({ error: 'parentName is required' });
+      }
+      const trimmedName = parentName.trim();
+      const settings = getSettings(familyId);
+      if (!settings) return res.status(404).json({ error: 'Family not found' });
+      const validParentNames = [(settings as any).parent1_name, (settings as any).parent2_name];
+      if (!validParentNames.includes(trimmedName)) {
+        return res.status(400).json({ error: 'parentName must be one of the family members' });
+      }
+
+      const newId = insertJournalEntry(familyId, trimmedName, nightDate, timestamp);
+      res.json({ id: newId, parent_name: trimmedName, action: 'completed_turn', timestamp, night_date: nightDate });
+    } catch (error: any) {
+      console.error("Error in POST /api/journal/entry:", error);
       res.status(500).json({ error: error.message });
     }
   });

@@ -229,6 +229,21 @@ export const deleteJournalEntry = (familyId: string, id: number): number => {
   return result.changes;
 };
 
+// Insert a manually-logged journal entry with an explicit timestamp.
+// Used when a parent retroactively records a wakeup they forgot to log live.
+// Returns the new row's id so the caller can return it in the API response.
+export const insertJournalEntry = (
+  familyId: string,
+  parentName: string,
+  nightDate: string,
+  timestamp: string  // Full ISO string, constructed from the user's chosen date + time
+): number => {
+  const result = db.prepare(
+    'INSERT INTO logs (family_id, parent_name, action, night_date, timestamp) VALUES (?, ?, ?, ?, ?)'
+  ).run(familyId, parentName, 'completed_turn', nightDate, timestamp);
+  return Number(result.lastInsertRowid);
+};
+
 // Delete all log entries for a given night_date, scoped to the family.
 // Returns the number of rows deleted (0 if the night had no entries).
 export const clearJournalNight = (familyId: string, nightDate: string): number => {
