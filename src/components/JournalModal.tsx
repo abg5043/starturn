@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BookOpen, Moon, X, ArrowRight, MoreHorizontal, Trash2, Pencil, Plus } from 'lucide-react';
 
@@ -90,6 +90,15 @@ function TripRow({
   const isEditing = editingEntryId === trip.id;
   const [editParentName, setEditParentName] = useState(trip.parent_name);
 
+  // Scroll this row into view when its edit form opens, so the expanded
+  // inline form is never hidden behind the bottom of the scroll container.
+  const rowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isEditing) {
+      rowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [isEditing]);
+
   // Reset the edit dropdown to the current parent_name each time edit mode opens,
   // so a previously cancelled or saved edit doesn't leak its selection into the next edit.
   useEffect(() => {
@@ -104,6 +113,7 @@ function TripRow({
 
   return (
     <motion.div
+      ref={rowRef}
       layout
       exit={{ opacity: 0, height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0 }}
       transition={{ duration: 0.18 }}
@@ -484,7 +494,7 @@ export function JournalModal({ onClose, parent1Name, parent2Name }: JournalModal
         </AnimatePresence>
 
         {/* Scrollable list */}
-        <div className="overflow-y-auto px-6 pb-8" style={{ maxHeight: 'calc(92vh - 80px)' }}>
+        <div className="overflow-y-auto px-6 pb-32" style={{ maxHeight: 'calc(92vh - 80px)' }}>
           {loading ? (
             <div className="text-center text-indigo-300/50 py-12 text-sm animate-pulse">Loading...</div>
           ) : nights.length === 0 ? (
