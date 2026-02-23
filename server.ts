@@ -18,7 +18,7 @@ import {
   hasPartnerEverLoggedIn
 } from "./src/db";
 import webpush from 'web-push';
-import { format, subDays } from 'date-fns';
+import { subDays } from 'date-fns';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -122,21 +122,60 @@ function oppositeIndex(index: number): number {
   return index === PARENT_1 ? PARENT_2 : PARENT_1;
 }
 
+// ─── Timezone-aware time helpers ─────────────────────────────────────────────
+//
+// The server may run in UTC while families live in any time zone. All
+// scheduler comparisons and night-context calculations must use the family's
+// local time, not the server clock.  We use the built-in Intl.DateTimeFormat
+// API so no extra packages are required.
+
+// Returns the current time as "HH:mm" in the given IANA timezone.
+// Normalises the rare "24:00" midnight edge case to "00:00".
+function currentTimeInZone(date: Date, timezone: string): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    hour:     '2-digit',
+    minute:   '2-digit',
+    hour12:   false,
+  }).formatToParts(date);
+  const hour   = (parts.find(p => p.type === 'hour')?.value   ?? '00').padStart(2, '0');
+  const minute = (parts.find(p => p.type === 'minute')?.value ?? '00').padStart(2, '0');
+  return `${hour === '24' ? '00' : hour}:${minute}`;
+}
+
+// Returns the current date as "YYYY-MM-DD" in the given IANA timezone.
+// The 'en-CA' locale reliably formats dates as YYYY-MM-DD.
+function currentDateInZone(date: Date, timezone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year:     'numeric',
+    month:    '2-digit',
+    day:      '2-digit',
+  }).format(date);
+}
+
 // ─── Night context helper ───────────────────────────────────────────────────
-function computeNightContext(now: Date, bedtime: string, wakeTime: string): { isNight: boolean; nightDate: string } {
+function computeNightContext(now: Date, bedtime: string, wakeTime: string, timezone: string): { isNight: boolean; nightDate: string } {
   const [btH, btM] = bedtime.split(':').map(Number);
   const [wtH, wtM] = wakeTime.split(':').map(Number);
-  const totalMins = now.getHours() * 60 + now.getMinutes();
-  const btMins = btH * 60 + btM;
-  const wtMins = wtH * 60 + wtM;
+
+  // Get the current HH:mm in the family's local timezone so comparisons
+  // are correct regardless of where the server is hosted.
+  const localTime = currentTimeInZone(now, timezone);
+  const [lH, lM]  = localTime.split(':').map(Number);
+  const totalMins = lH * 60 + lM;
+  const btMins    = btH * 60 + btM;
+  const wtMins    = wtH * 60 + wtM;
 
   const isNight = totalMins >= btMins || totalMins < wtMins;
 
   let nightDate: string;
   if (totalMins >= btMins) {
-    nightDate = format(now, 'yyyy-MM-dd');
+    // After bedtime on the same calendar day
+    nightDate = currentDateInZone(now, timezone);
   } else {
-    nightDate = format(subDays(now, 1), 'yyyy-MM-dd');
+    // Before wake time — the night started on the previous calendar day
+    nightDate = currentDateInZone(subDays(now, 1), timezone);
   }
 
   return { isNight, nightDate };
@@ -215,7 +254,6 @@ let cleanupCounter = 0;
 setInterval(() => {
   try {
     const now = new Date();
-    const currentTime = format(now, 'HH:mm');
 
     // Cleanup expired tokens every 60 minutes
     cleanupCounter++;
@@ -228,6 +266,11 @@ setInterval(() => {
 
     allSettings.forEach((setting: any) => {
       const wakeTime = setting.wake_time || '07:00';
+
+      // Each family may be in a different timezone. Compute the current
+      // HH:mm in *their* local zone so all comparisons are correct.
+      const familyTimezone = setting.timezone || 'UTC';
+      const currentTime    = currentTimeInZone(now, familyTimezone);
 
       // Bedtime: send reminder notification with fun message
       if (setting.bedtime === currentTime) {
@@ -245,7 +288,7 @@ setInterval(() => {
           // "Alternate nightly" mode:
           // Regardless of how many mid-night swaps happened,
           // the parent who went first LAST night goes SECOND tonight.
-          const lastNightDate = computeNightContext(subDays(now, 1), setting.bedtime, wakeTime).nightDate;
+          const lastNightDate = computeNightContext(subDays(now, 1), setting.bedtime, wakeTime, familyTimezone).nightDate;
           const firstTripLastNight = getFirstTripOfNight(setting.family_id, lastNightDate);
 
           if (firstTripLastNight) {
@@ -389,7 +432,7 @@ async function startServer() {
 
   app.post("/api/auth/setup", async (req, res) => {
     try {
-      const { email, name, partnerName, partnerEmail, bedtime, wakeTime, firstTurnIndex } = req.body;
+      const { email, name, partnerName, partnerEmail, bedtime, wakeTime, firstTurnIndex, timezone } = req.body;
       if (!email || !name || !partnerName || !partnerEmail) {
         return res.status(400).json({ error: 'Missing required fields' });
       }
@@ -412,6 +455,9 @@ async function startServer() {
 
       const safeBedtime = bedtime && isValidTime(bedtime) ? bedtime : '22:00';
       const safeWakeTime = wakeTime && isValidTime(wakeTime) ? wakeTime : '07:00';
+      // Capture the registering parent's browser timezone so the scheduler fires
+      // at the right local time. Falls back to 'UTC' if not provided.
+      const safeTimezone = typeof timezone === 'string' && timezone.trim() ? timezone.trim() : 'UTC';
 
       // Check if either email is already registered
       const existing = findFamilyByEmail(normalizedEmail);
@@ -433,7 +479,8 @@ async function startServer() {
         normalizedPartnerEmail,
         safeBedtime,
         safeWakeTime,
-        firstTurnIndex ?? 0
+        firstTurnIndex ?? 0,
+        safeTimezone
       );
 
       // Send magic link to the acting parent (always parent1 / index 0)
@@ -534,7 +581,8 @@ async function startServer() {
       const logs = getLogs(familyId);
 
       const wakeTime = settings.wake_time || '07:00';
-      const { isNight, nightDate } = computeNightContext(new Date(), settings.bedtime, wakeTime);
+      const timezone = settings.timezone  || 'UTC';
+      const { isNight, nightDate } = computeNightContext(new Date(), settings.bedtime, wakeTime, timezone);
 
       // ─── Determine who goes first tonight (shown during daytime) ───────
       let tonightFirstParent: string | null = null;
@@ -545,7 +593,7 @@ async function startServer() {
 
         if (shouldAlternateNightly) {
           // Look at who went first last night and pick the opposite parent.
-          const lastNightDate = format(subDays(new Date(), 1), 'yyyy-MM-dd');
+          const lastNightDate = currentDateInZone(subDays(new Date(), 1), timezone);
           const firstTripLastNight = getFirstTripOfNight(familyId, lastNightDate);
 
           if (firstTripLastNight) {
@@ -575,7 +623,7 @@ async function startServer() {
   app.post("/api/settings", authenticateRequest, (req, res) => {
     try {
       const familyId = (req as any).familyId;
-      const { parent1, parent2, bedtime, wakeTime, rotationMode, reminderTime } = req.body;
+      const { parent1, parent2, bedtime, wakeTime, rotationMode, reminderTime, timezone } = req.body;
 
       // Validate and sanitize inputs
       const safeName1 = parent1 ? sanitizeName(parent1) : undefined;
@@ -587,6 +635,13 @@ async function startServer() {
       const safeWakeTime = wakeTime && isValidTime(wakeTime) ? wakeTime : '07:00';
       const safeRotation = rotationMode && isValidRotationMode(rotationMode) ? rotationMode : ROTATION_ALTERNATE_NIGHTLY;
 
+      // IANA timezone string sent by the browser (e.g. "America/Chicago").
+      // Fall back to 'UTC' if absent or malformed rather than rejecting the save.
+      const safeTimezone: string =
+        typeof timezone === 'string' && timezone.trim().length > 0
+          ? timezone.trim()
+          : 'UTC';
+
       // Normalize reminderTime: a valid HH:mm string enables the evening reminder;
       // an empty string or missing value disables it (stores NULL in the DB).
       const safeReminderTime: string | null =
@@ -594,7 +649,7 @@ async function startServer() {
           ? reminderTime
           : null;
 
-      updateSettings(familyId, safeName1 || '', safeName2 || '', safeBedtime, safeWakeTime, safeRotation, undefined, undefined, undefined, safeReminderTime);
+      updateSettings(familyId, safeName1 || '', safeName2 || '', safeBedtime, safeWakeTime, safeRotation, undefined, undefined, undefined, safeTimezone, safeReminderTime);
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error in /api/settings:", error);
@@ -608,7 +663,7 @@ async function startServer() {
       const parentIndex = (req as any).parentIndex;
       const settings: any = getSettings(familyId);
       const parentName = parentIndex === 0 ? settings.parent1_name : settings.parent2_name;
-      const { nightDate } = computeNightContext(new Date(), settings.bedtime, settings.wake_time || '07:00');
+      const { nightDate } = computeNightContext(new Date(), settings.bedtime, settings.wake_time || '07:00', settings.timezone || 'UTC');
 
       logAction(familyId, parentName, 'completed_turn', nightDate);
       toggleTurn(familyId);
@@ -636,7 +691,7 @@ async function startServer() {
 
       const settings: any = getSettings(familyId);
       const actingParent = parentIndex === 0 ? settings.parent1_name : settings.parent2_name;
-      const { nightDate } = computeNightContext(new Date(), settings.bedtime, settings.wake_time || '07:00');
+      const { nightDate } = computeNightContext(new Date(), settings.bedtime, settings.wake_time || '07:00', settings.timezone || 'UTC');
       const action = actionType === 'takeover' ? 'took_over' : 'skipped_turn';
 
       logAction(familyId, actingParent, action, nightDate);

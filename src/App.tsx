@@ -258,7 +258,7 @@ export default function App() {
     const response = await fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parent1: p1Name, parent2: p2Name, bedtime, wakeTime, rotationMode, reminderTime })
+      body: JSON.stringify({ parent1: p1Name, parent2: p2Name, bedtime, wakeTime, rotationMode, reminderTime, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })
     });
 
     if (!response.ok) {

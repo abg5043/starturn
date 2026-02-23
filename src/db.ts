@@ -73,6 +73,9 @@ try { db.exec(`ALTER TABLE settings ADD COLUMN rotation_mode TEXT DEFAULT 'alter
 // Allow families to configure an optional evening reminder time, separate from bedtime.
 // NULL means disabled; a valid HH:mm string means "fire a reminder push notification at this time."
 try { db.exec(`ALTER TABLE settings ADD COLUMN reminder_time TEXT DEFAULT NULL`); } catch (_) {}
+// Store the family's IANA timezone (e.g. "America/Chicago") so the scheduler and
+// night-context logic can compare times in the family's local zone rather than UTC.
+try { db.exec(`ALTER TABLE settings ADD COLUMN timezone TEXT DEFAULT 'UTC'`); } catch (_) {}
 
 // Email indexes for lookup
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_settings_parent1_email ON settings(parent1_email)`); } catch (_) {}
@@ -129,11 +132,16 @@ export const updateSettings = (
   firstTurnIndex?: number,
   parent1Email?: string,
   parent2Email?: string,
+  // IANA timezone string (e.g. "America/Chicago"). Sent from the browser on every
+  // settings save so the server always has the family's current local timezone.
+  // Defaults to 'UTC' if omitted so existing rows keep working.
+  timezone?: string,
   // Optional evening reminder time (HH:mm) separate from bedtime.
   // Pass null to clear it, undefined/omitted to leave the existing value as-is.
   reminderTime?: string | null
 ) => {
   const safeRotationMode = rotationMode || 'alternate_nightly';
+  const safeTimezone     = timezone || 'UTC';
   // Convert undefined → null so SQLite receives a concrete value.
   // undefined means "caller didn't supply it" — we still write NULL, which is
   // fine since this column defaults to NULL and the settings modal always
@@ -142,16 +150,16 @@ export const updateSettings = (
 
   if (firstTurnIndex !== undefined && parent1Email !== undefined && parent2Email !== undefined) {
     db.prepare(
-      'UPDATE settings SET parent1_name = ?, parent2_name = ?, bedtime = ?, wake_time = ?, rotation_mode = ?, is_setup_complete = 1, current_turn_index = ?, parent1_email = ?, parent2_email = ?, reminder_time = ? WHERE family_id = ?'
-    ).run(parent1, parent2, bedtime, wakeTime, safeRotationMode, firstTurnIndex, parent1Email, parent2Email, safeReminderTime, familyId);
+      'UPDATE settings SET parent1_name = ?, parent2_name = ?, bedtime = ?, wake_time = ?, rotation_mode = ?, is_setup_complete = 1, current_turn_index = ?, parent1_email = ?, parent2_email = ?, timezone = ?, reminder_time = ? WHERE family_id = ?'
+    ).run(parent1, parent2, bedtime, wakeTime, safeRotationMode, firstTurnIndex, parent1Email, parent2Email, safeTimezone, safeReminderTime, familyId);
   } else if (firstTurnIndex !== undefined) {
     db.prepare(
-      'UPDATE settings SET parent1_name = ?, parent2_name = ?, bedtime = ?, wake_time = ?, rotation_mode = ?, is_setup_complete = 1, current_turn_index = ?, reminder_time = ? WHERE family_id = ?'
-    ).run(parent1, parent2, bedtime, wakeTime, safeRotationMode, firstTurnIndex, safeReminderTime, familyId);
+      'UPDATE settings SET parent1_name = ?, parent2_name = ?, bedtime = ?, wake_time = ?, rotation_mode = ?, is_setup_complete = 1, current_turn_index = ?, timezone = ?, reminder_time = ? WHERE family_id = ?'
+    ).run(parent1, parent2, bedtime, wakeTime, safeRotationMode, firstTurnIndex, safeTimezone, safeReminderTime, familyId);
   } else {
     db.prepare(
-      'UPDATE settings SET parent1_name = ?, parent2_name = ?, bedtime = ?, wake_time = ?, rotation_mode = ?, is_setup_complete = 1, reminder_time = ? WHERE family_id = ?'
-    ).run(parent1, parent2, bedtime, wakeTime, safeRotationMode, safeReminderTime, familyId);
+      'UPDATE settings SET parent1_name = ?, parent2_name = ?, bedtime = ?, wake_time = ?, rotation_mode = ?, is_setup_complete = 1, timezone = ?, reminder_time = ? WHERE family_id = ?'
+    ).run(parent1, parent2, bedtime, wakeTime, safeRotationMode, safeTimezone, safeReminderTime, familyId);
   }
 };
 
@@ -317,12 +325,14 @@ export const createFamily = (
   parent2Email: string,
   bedtime: string,
   wakeTime: string,
-  firstTurnIndex: number
+  firstTurnIndex: number,
+  // IANA timezone captured from the registering parent's browser.
+  timezone: string
 ) => {
   db.prepare(
-    `INSERT INTO settings (family_id, parent1_name, parent1_email, parent2_name, parent2_email, bedtime, wake_time, current_turn_index, is_setup_complete)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`
-  ).run(familyId, parent1Name, parent1Email, parent2Name, parent2Email, bedtime, wakeTime, firstTurnIndex);
+    `INSERT INTO settings (family_id, parent1_name, parent1_email, parent2_name, parent2_email, bedtime, wake_time, current_turn_index, is_setup_complete, timezone)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
+  ).run(familyId, parent1Name, parent1Email, parent2Name, parent2Email, bedtime, wakeTime, firstTurnIndex, timezone);
 };
 
 export const getParentEmail = (familyId: string, parentIndex: number): string | null => {

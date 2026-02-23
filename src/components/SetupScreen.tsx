@@ -59,7 +59,10 @@ export function SetupScreen({ email, onComplete }: SetupScreenProps) {
         partnerEmail: partnerEmail.trim(),
         bedtime,
         wakeTime,
-        firstTurnIndex: firstTurn
+        firstTurnIndex: firstTurn,
+        // Capture the browser's IANA timezone (e.g. "America/Chicago") so the
+        // server can fire scheduled notifications at the right local time.
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
       })
     });
 
