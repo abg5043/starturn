@@ -182,6 +182,16 @@ const turnCompleteMessages = [
   (p: string) => ({ title: 'Swap!', body: `${p} is back. Your turn next!` }),
 ];
 
+// These messages fire at the user-configured evening reminder time, which is
+// intentionally earlier and calmer than the bedtime notification — a heads-up
+// to let parents plan the night before bedtime arrives.
+const eveningReminderMessages = [
+  (p: string) => ({ title: "Tonight's reminder", body: `${p} is up first tonight. Get some rest!` }),
+  (p: string) => ({ title: 'Heads up!',           body: `${p} takes the first shift tonight.` }),
+  (p: string) => ({ title: 'Evening reminder',     body: `Tonight starts with ${p}.` }),
+  (p: string) => ({ title: 'Plan for tonight',     body: `${p} goes first when bedtime hits.` }),
+];
+
 function pickRandom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -253,6 +263,52 @@ setInterval(() => {
         // "Continue from last" mode:
         // Do nothing. current_turn_index already reflects whoever
         // is next after last night's final trip. No reset needed.
+      }
+
+      // ─── Evening reminder ───────────────────────────────────────────────
+      // Fires at setting.reminder_time (if configured) to give parents an
+      // advance heads-up about who goes first tonight — intended to be set
+      // earlier than bedtime (e.g. 8 PM) so there is time to plan.
+      //
+      // Placed after the wake-time block so that if reminder_time happens to
+      // equal wake_time, the turn index has already been updated for tonight
+      // before we compute the parent name.
+      //
+      // If reminder_time equals bedtime we skip it entirely — the bedtime
+      // notification already handles that moment.
+      const eveningReminderTime          = setting.reminder_time;
+      const reminderCoincidesWithBedtime = eveningReminderTime === setting.bedtime;
+
+      if (eveningReminderTime && eveningReminderTime === currentTime && !reminderCoincidesWithBedtime) {
+        const reminderRotationMode   = setting.rotation_mode || ROTATION_ALTERNATE_NIGHTLY;
+        const shouldAlternateNightly = reminderRotationMode !== ROTATION_CONTINUE_FROM_LAST;
+        let parentWhoGoesFirstTonight: string | null = null;
+
+        if (shouldAlternateNightly) {
+          // Mirror the wake-time logic: find who went first last night,
+          // then assign the opposite parent for tonight.
+          const lastNightDate      = computeNightContext(subDays(now, 1), setting.bedtime, wakeTime).nightDate;
+          const firstTripLastNight = getFirstTripOfNight(setting.family_id, lastNightDate);
+
+          if (firstTripLastNight) {
+            const indexWhoWentFirstLastNight =
+              firstTripLastNight.parent_name === setting.parent1_name ? PARENT_1 : PARENT_2;
+            const tonightFirstIndex   = oppositeIndex(indexWhoWentFirstLastNight);
+            parentWhoGoesFirstTonight = parentNameByIndex(setting, tonightFirstIndex);
+          } else {
+            // No log found for last night — fall back to the current turn index.
+            parentWhoGoesFirstTonight = parentNameByIndex(setting, setting.current_turn_index);
+          }
+        } else {
+          // "Continue from last" mode: current_turn_index already carries
+          // the correct value forward from the last completed trip.
+          parentWhoGoesFirstTonight = parentNameByIndex(setting, setting.current_turn_index);
+        }
+
+        if (parentWhoGoesFirstTonight) {
+          const reminderMsg = pickRandom(eveningReminderMessages)(parentWhoGoesFirstTonight);
+          sendPushToFamily(setting.family_id, reminderMsg.title, reminderMsg.body);
+        }
       }
     });
   } catch (error) {
@@ -519,7 +575,7 @@ async function startServer() {
   app.post("/api/settings", authenticateRequest, (req, res) => {
     try {
       const familyId = (req as any).familyId;
-      const { parent1, parent2, bedtime, wakeTime, rotationMode } = req.body;
+      const { parent1, parent2, bedtime, wakeTime, rotationMode, reminderTime } = req.body;
 
       // Validate and sanitize inputs
       const safeName1 = parent1 ? sanitizeName(parent1) : undefined;
@@ -531,7 +587,14 @@ async function startServer() {
       const safeWakeTime = wakeTime && isValidTime(wakeTime) ? wakeTime : '07:00';
       const safeRotation = rotationMode && isValidRotationMode(rotationMode) ? rotationMode : ROTATION_ALTERNATE_NIGHTLY;
 
-      updateSettings(familyId, safeName1 || '', safeName2 || '', safeBedtime, safeWakeTime, safeRotation);
+      // Normalize reminderTime: a valid HH:mm string enables the evening reminder;
+      // an empty string or missing value disables it (stores NULL in the DB).
+      const safeReminderTime: string | null =
+        typeof reminderTime === 'string' && isValidTime(reminderTime)
+          ? reminderTime
+          : null;
+
+      updateSettings(familyId, safeName1 || '', safeName2 || '', safeBedtime, safeWakeTime, safeRotation, undefined, undefined, undefined, safeReminderTime);
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error in /api/settings:", error);

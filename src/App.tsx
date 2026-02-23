@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
-import { Settings, Moon, Check, Bell, Star, BookOpen, Mail, ArrowRightLeft, HelpCircle, Smartphone, CheckCircle, AlertTriangle, X } from 'lucide-react';
+import { Settings, Moon, Check, Bell, Star, BookOpen, Mail, ArrowRightLeft, HelpCircle, Smartphone, CheckCircle, AlertTriangle, X, LogOut } from 'lucide-react';
 import { StarryBackground } from './components/StarryBackground';
 import { SetupScreen } from './components/SetupScreen';
 import { JournalModal } from './components/JournalModal';
@@ -21,6 +21,7 @@ type AppState = {
     current_turn_index: number;
     rotation_mode: string;
     is_setup_complete: number;
+    reminder_time: string | null;
   };
   logs: Array<{
     id: number;
@@ -116,6 +117,8 @@ export default function App() {
   const [bedtime, setBedtime] = useState('');
   const [wakeTime, setWakeTime] = useState('');
   const [rotationMode, setRotationMode] = useState(ROTATION_ALTERNATE_NIGHTLY);
+  // Optional evening reminder time (HH:mm); empty string means "disabled".
+  const [reminderTime, setReminderTime] = useState('');
 
   // Keep ref in sync
   useEffect(() => {
@@ -214,6 +217,7 @@ export default function App() {
         setBedtime(data.settings.bedtime);
         setWakeTime(data.settings.wake_time || '07:00');
         setRotationMode(data.settings.rotation_mode || ROTATION_ALTERNATE_NIGHTLY);
+        setReminderTime(data.settings.reminder_time || '');
       }
       return data;
     } catch (e) {
@@ -254,7 +258,7 @@ export default function App() {
     const response = await fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parent1: p1Name, parent2: p2Name, bedtime, wakeTime, rotationMode })
+      body: JSON.stringify({ parent1: p1Name, parent2: p2Name, bedtime, wakeTime, rotationMode, reminderTime })
     });
 
     if (!response.ok) {
@@ -561,12 +565,6 @@ export default function App() {
           <div className="text-sm text-indigo-200 mr-2 hidden sm:block">
             {currentUser} & {partnerName}
           </div>
-          <button
-            onClick={handleLogout}
-            className="text-xs font-medium text-indigo-300 hover:text-white px-3 py-2 rounded-full hover:bg-white/10 transition-colors"
-          >
-            Logout
-          </button>
           <button
             onClick={() => setShowHelp(true)}
             className="p-2 rounded-full hover:bg-white/10 transition-colors backdrop-blur-sm"
@@ -963,6 +961,27 @@ export default function App() {
                   />
                 </div>
 
+                {/* ─── Evening Reminder ──────────────────────────────────────────────────
+                    A push notification fires at this time to let both parents know who goes
+                    first tonight — intended to be set earlier than bedtime (e.g. 8 PM) so
+                    there's time to plan the night.
+                    Leave blank to disable. ───────────────────────────────────────────── */}
+                <div>
+                  <label className="block text-xs font-medium text-indigo-300 uppercase tracking-wider mb-1">
+                    Evening Reminder
+                  </label>
+                  <input
+                    type="time"
+                    value={reminderTime}
+                    onChange={(e) => setReminderTime(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+                  />
+                  <p className="text-xs text-indigo-300/60 mt-1.5">
+                    Sends a push reminder at this time letting both parents know whose turn
+                    it is tonight. Leave blank to disable.
+                  </p>
+                </div>
+
                 {/* ─── Night Rotation Mode ─────────────────────────────── */}
                 <div>
                   <label className="block text-xs font-medium text-indigo-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
@@ -1036,6 +1055,23 @@ export default function App() {
                 >
                   Save Changes
                 </button>
+
+                {/* ─── Sign Out ──────────────────────────────────────────────────────
+                    Placed at the bottom of Settings so it's accessible but not
+                    prominent. Closing the modal before logout prevents a frozen
+                    overlay during the async logout fetch. ─────────────────────── */}
+                <div className="pt-4 mt-2 border-t border-rose-500/20">
+                  <p className="text-xs text-rose-300/60 mb-3">
+                    You'll need your magic link email to sign back in.
+                  </p>
+                  <button
+                    onClick={() => { setShowSettings(false); handleLogout(); }}
+                    className="w-full py-3 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 transition-colors flex items-center justify-center gap-2 text-sm font-medium"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Sign out
+                  </button>
+                </div>
               </div>
             </motion.div>
           </motion.div>
