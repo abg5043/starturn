@@ -562,7 +562,7 @@ export default function App() {
           <span className="font-bold text-xl tracking-tight hidden sm:inline">StarTurn</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="text-sm text-indigo-200 mr-2 hidden sm:block">
+          <div className="text-sm text-indigo-200 mr-2 truncate max-w-[140px]">
             {currentUser} & {partnerName}
           </div>
           <button
