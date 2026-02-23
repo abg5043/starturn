@@ -915,12 +915,21 @@ export default function App() {
             >
               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
 
-              <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
-                <Settings className="w-6 h-6 text-indigo-400" />
-                Settings
-              </h2>
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold flex items-center gap-2">
+                  <Settings className="w-6 h-6 text-indigo-400" />
+                  Settings
+                </h2>
+                <button
+                  onClick={() => setShowSettings(false)}
+                  className="p-2 rounded-full hover:bg-white/10 transition-colors text-indigo-300"
+                  aria-label="Close settings"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
 
-              <div className="space-y-4 overflow-y-auto flex-1 pb-8">
+              <div className="space-y-4 overflow-y-auto overflow-x-hidden flex-1 pb-8">
                 <div>
                   <label className="block text-xs font-medium text-indigo-300 uppercase tracking-wider mb-1">Parent 1 Name</label>
                   <input
@@ -947,7 +956,7 @@ export default function App() {
                     type="time"
                     value={bedtime}
                     onChange={(e) => setBedtime(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+                    className="w-full min-w-0 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
                   />
                 </div>
 
@@ -957,7 +966,7 @@ export default function App() {
                     type="time"
                     value={wakeTime}
                     onChange={(e) => setWakeTime(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+                    className="w-full min-w-0 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
                   />
                 </div>
 
@@ -974,7 +983,7 @@ export default function App() {
                     type="time"
                     value={reminderTime}
                     onChange={(e) => setReminderTime(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+                    className="w-full min-w-0 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
                   />
                   <p className="text-xs text-indigo-300/60 mt-1.5">
                     Sends a push reminder at this time letting both parents know whose turn
