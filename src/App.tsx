@@ -101,6 +101,7 @@ export default function App() {
   const [showNotifPrompt, setShowNotifPrompt] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [resendingInvite, setResendingInvite] = useState(false);
+  const [isDoneLoading, setIsDoneLoading] = useState(false);
 
   // ─── Login flow state ─────────────────────────────────────────────────────
   const [loginInput, setLoginInput] = useState('');
@@ -227,21 +228,36 @@ export default function App() {
   };
 
   const handleDone = async () => {
-    // Single tap: log the turn, celebrate, and pass the turn to the partner
-    await fetch('/api/complete-turn', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({})
-    });
+    // Single tap: log the turn, celebrate, and pass the turn to the partner.
+    // We must confirm the API call succeeded before celebrating — a silent
+    // failure here means the turn is never recorded and the schedule drifts.
+    setIsDoneLoading(true);
+    try {
+      const completeTurnResponse = await fetch('/api/complete-turn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
 
-    confetti({
-      particleCount: 100,
-      spread: 70,
-      origin: { y: 0.6 },
-      colors: ['#FFD700', '#FFA500', '#FFFFFF']
-    });
+      if (!completeTurnResponse.ok) {
+        throw new Error(`Server responded with ${completeTurnResponse.status}`);
+      }
 
-    fetchState();
+      // Only celebrate and refresh state after a confirmed successful save
+      confetti({
+        particleCount: 100,
+        spread: 70,
+        origin: { y: 0.6 },
+        colors: ['#FFD700', '#FFA500', '#FFFFFF']
+      });
+
+      fetchState();
+    } catch (err) {
+      console.error('Failed to complete turn:', err);
+      showToast('Something went wrong. Your turn may not have been saved — please try again.', 'error');
+    } finally {
+      setIsDoneLoading(false);
+    }
   };
 
   const handleOverrideTurn = async (actionType: 'skip' | 'takeover') => {
@@ -751,10 +767,11 @@ export default function App() {
                   <>
                     <button
                         onClick={handleDone}
-                        className="group relative px-8 py-4 bg-indigo-500 text-white rounded-full font-bold text-lg shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30 hover:scale-105 transition-all active:scale-95 flex items-center gap-3"
+                        disabled={isDoneLoading}
+                        className={`group relative px-8 py-4 bg-indigo-500 text-white rounded-full font-bold text-lg shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30 transition-all flex items-center gap-3 ${isDoneLoading ? 'opacity-60 cursor-not-allowed' : 'hover:scale-105 active:scale-95'}`}
                       >
                         <Check className="w-5 h-5" />
-                        <span>Done &mdash; Going Back to Bed</span>
+                        <span>{isDoneLoading ? 'Saving...' : 'Done \u2014 Going Back to Bed'}</span>
                       </button>
                     <button
                       onClick={() => handleOverrideTurn('skip')}
