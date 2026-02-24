@@ -4,6 +4,8 @@ html,
 body,
 #root {
 	min-height: 100dvh;
+	background-color: #0f172a; /* slate-900, matches star canvas gradient top */
+	overflow-x: hidden;
 }
 
 body {

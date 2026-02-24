@@ -49,22 +49,25 @@ export function StarryBackground() {
 
     const resize = () => {
       if (!canvas) return;
-      // Use the full visual viewport including the area behind the iPhone
-      // notch / Dynamic Island. With viewport-fit=cover the browser exposes
-      // the extra space, but window.innerHeight still reports the safe-area
-      // height on some iOS versions — screen dimensions are more reliable.
-      canvas.width = Math.max(window.innerWidth, screen.width);
-      canvas.height = Math.max(window.innerHeight, screen.height);
+      // On iOS Safari, visualViewport gives the actual visible area accounting
+      // for dynamic UI (address bar, tab bar). Fall back to window dimensions
+      // for other browsers.
+      const vp = window.visualViewport;
+      canvas.width = vp ? vp.width : window.innerWidth;
+      canvas.height = vp ? vp.height : window.innerHeight;
       initStars();
       draw();
     };
 
     window.addEventListener('resize', resize);
+    // Also listen to visualViewport resize for iOS Safari address bar changes
+    window.visualViewport?.addEventListener('resize', resize);
     resize(); // This calls initStars and draw
 
 
     return () => {
       window.removeEventListener('resize', resize);
+      window.visualViewport?.removeEventListener('resize', resize);
     };
   }, []);
 
