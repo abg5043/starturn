@@ -9,5 +9,5 @@ startCommand = "npm start"
 
 # Health check — Railway will wait for the server to be ready before
 # routing traffic to it, preventing requests hitting a cold-starting process.
-healthcheckPath = "/api/auth/me"
+healthcheckPath = "/health"
 healthcheckTimeout = 30

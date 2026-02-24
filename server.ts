@@ -420,6 +420,10 @@ async function startServer() {
   // Security headers (CSP disabled — Vite injects inline scripts in dev mode)
   app.use(helmet({ contentSecurityPolicy: false }));
 
+  // Lightweight health endpoint for Railway's healthcheck. Must always return
+  // 200 without authentication so the deploy isn't rejected.
+  app.get('/health', (_req, res) => res.json({ ok: true }));
+
   const cookieOptions: express.CookieOptions = {
     httpOnly: true,
     sameSite: 'lax',
