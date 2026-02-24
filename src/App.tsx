@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
-import { Settings, Moon, Check, Bell, Star, BookOpen, Mail, ArrowRightLeft, HelpCircle, Smartphone, CheckCircle, AlertTriangle, X, LogOut } from 'lucide-react';
+import { Settings, Moon, Check, Bell, Star, BookOpen, Mail, ArrowRightLeft, HelpCircle, Smartphone, CheckCircle, AlertTriangle, X, LogOut, Loader2 } from 'lucide-react';
 import { StarryBackground } from './components/StarryBackground';
 import { SetupScreen } from './components/SetupScreen';
 import { JournalModal } from './components/JournalModal';
@@ -101,7 +101,9 @@ export default function App() {
   const [showNotifPrompt, setShowNotifPrompt] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [resendingInvite, setResendingInvite] = useState(false);
-  const [isDoneLoading, setIsDoneLoading] = useState(false);
+  // Shared loading guard for all night-mode action buttons (Done, Skip, Takeover).
+  // A single flag prevents conflicting concurrent requests from any combination of taps.
+  const [isActionLoading, setIsActionLoading] = useState(false);
 
   // ─── Login flow state ─────────────────────────────────────────────────────
   const [loginInput, setLoginInput] = useState('');
@@ -228,10 +230,12 @@ export default function App() {
   };
 
   const handleDone = async () => {
-    // Single tap: log the turn, celebrate, and pass the turn to the partner.
+    // Guard against double-taps: if any night-mode action is already in-flight, bail out.
+    if (isActionLoading) return;
+
     // We must confirm the API call succeeded before celebrating — a silent
     // failure here means the turn is never recorded and the schedule drifts.
-    setIsDoneLoading(true);
+    setIsActionLoading(true);
     try {
       const completeTurnResponse = await fetch('/api/complete-turn', {
         method: 'POST',
@@ -256,18 +260,35 @@ export default function App() {
       console.error('Failed to complete turn:', err);
       showToast('Something went wrong. Your turn may not have been saved — please try again.', 'error');
     } finally {
-      setIsDoneLoading(false);
+      setIsActionLoading(false);
     }
   };
 
   const handleOverrideTurn = async (actionType: 'skip' | 'takeover') => {
     if (!state) return;
-    await fetch('/api/override-turn', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ actionType })
-    });
-    fetchState();
+    // Guard against double-taps or conflicting actions while a request is in-flight
+    if (isActionLoading) return;
+
+    setIsActionLoading(true);
+    try {
+      const overrideResponse = await fetch('/api/override-turn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actionType })
+      });
+
+      if (!overrideResponse.ok) {
+        throw new Error(`Server responded with ${overrideResponse.status}`);
+      }
+
+      fetchState();
+    } catch (err) {
+      console.error('Failed to override turn:', err);
+      const actionLabel = actionType === 'skip' ? 'skip' : 'takeover';
+      showToast(`Failed to ${actionLabel} — please try again.`, 'error');
+    } finally {
+      setIsActionLoading(false);
+    }
   };
 
   const saveSettings = async () => {
@@ -767,15 +788,20 @@ export default function App() {
                   <>
                     <button
                         onClick={handleDone}
-                        disabled={isDoneLoading}
-                        className={`group relative px-8 py-4 bg-indigo-500 text-white rounded-full font-bold text-lg shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30 transition-all flex items-center gap-3 ${isDoneLoading ? 'opacity-60 cursor-not-allowed' : 'hover:scale-105 active:scale-95'}`}
+                        disabled={isActionLoading}
+                        className={`group relative px-8 py-4 bg-indigo-500 text-white rounded-full font-bold text-lg shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30 transition-all flex items-center gap-3 ${isActionLoading ? 'opacity-60 cursor-not-allowed' : 'hover:scale-105 active:scale-95'}`}
                       >
-                        <Check className="w-5 h-5" />
-                        <span>{isDoneLoading ? 'Saving...' : 'Done \u2014 Going Back to Bed'}</span>
+                        {isActionLoading ? (
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                        ) : (
+                          <Check className="w-5 h-5" />
+                        )}
+                        <span>{isActionLoading ? 'Saving...' : 'Done \u2014 Going Back to Bed'}</span>
                       </button>
                     <button
                       onClick={() => handleOverrideTurn('skip')}
-                      className="text-sm text-indigo-300/60 hover:text-indigo-200 underline underline-offset-2 transition-colors"
+                      disabled={isActionLoading}
+                      className={`text-sm text-indigo-300/60 underline underline-offset-2 transition-colors ${isActionLoading ? 'opacity-40 cursor-not-allowed' : 'hover:text-indigo-200'}`}
                     >
                       Skip my turn
                     </button>
@@ -787,7 +813,8 @@ export default function App() {
                     </div>
                     <button
                       onClick={() => handleOverrideTurn('takeover')}
-                      className="text-sm text-indigo-300/60 hover:text-indigo-200 underline underline-offset-2 transition-colors"
+                      disabled={isActionLoading}
+                      className={`text-sm text-indigo-300/60 underline underline-offset-2 transition-colors ${isActionLoading ? 'opacity-40 cursor-not-allowed' : 'hover:text-indigo-200'}`}
                     >
                       Let me take over for {currentTurnParent}
                     </button>
