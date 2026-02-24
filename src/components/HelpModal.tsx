@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { HelpCircle, Star, Moon, ArrowRightLeft, BookOpen, Settings, Smartphone } from 'lucide-react';
+import { HelpCircle, Star, Moon, Sun, ArrowRightLeft, BookOpen, Settings, Smartphone } from 'lucide-react';
 
 interface HelpModalProps {
   onClose: () => void;
@@ -33,10 +33,12 @@ export function HelpModal({ onClose }: HelpModalProps) {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <Star className="w-4 h-4 text-yellow-200 fill-yellow-200 shrink-0" />
-              <span className="font-semibold text-white">On Duty</span>
+              <span className="font-semibold text-white">It&rsquo;s Your Turn</span>
             </div>
             <p className="text-indigo-200/80 ml-6">
-              When it's your turn, tap "I'm Going In" when the child wakes. Tap again when you're back in bed. The turn passes to your partner.
+              When the child wakes and it&rsquo;s your turn, handle the situation as normal.
+              When you&rsquo;re back in bed, tap &ldquo;Done &mdash; Going Back to Bed&rdquo; to log the
+              wakeup and pass the turn to your partner.
             </p>
           </div>
 
@@ -46,7 +48,8 @@ export function HelpModal({ onClose }: HelpModalProps) {
               <span className="font-semibold text-white">Rest Mode</span>
             </div>
             <p className="text-indigo-200/80 ml-6">
-              When it's your partner's turn, relax. You'll be notified when they finish.
+              When it&rsquo;s your partner&rsquo;s turn, relax &mdash; the app shows who&rsquo;s on duty so
+              you both always know.
             </p>
           </div>
 
@@ -56,7 +59,20 @@ export function HelpModal({ onClose }: HelpModalProps) {
               <span className="font-semibold text-white">Skip / Take Over</span>
             </div>
             <p className="text-indigo-200/80 ml-6">
-              You can skip your turn or take over for your partner anytime.
+              &ldquo;Skip my turn&rdquo; passes this wakeup to your partner.
+              &ldquo;Let me take over&rdquo; claims the turn if your partner can&rsquo;t respond.
+            </p>
+          </div>
+
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Sun className="w-4 h-4 text-amber-300 shrink-0" />
+              <span className="font-semibold text-white">Daytime View</span>
+            </div>
+            <p className="text-indigo-200/80 ml-6">
+              During the day you&rsquo;ll see a countdown to bedtime and who&rsquo;s
+              &ldquo;first up&rdquo; &mdash; meaning who handles the first wakeup of the night,
+              not who puts the child to bed.
             </p>
           </div>
 
@@ -66,7 +82,8 @@ export function HelpModal({ onClose }: HelpModalProps) {
               <span className="font-semibold text-white">Night Journal</span>
             </div>
             <p className="text-indigo-200/80 ml-6">
-              Tap the book icon (bottom-left) to see a history of all nighttime activity.
+              Tap the book icon to see a history of every wakeup &mdash; useful
+              for spotting patterns over time.
             </p>
           </div>
 
@@ -76,7 +93,8 @@ export function HelpModal({ onClose }: HelpModalProps) {
               <span className="font-semibold text-white">Settings</span>
             </div>
             <p className="text-indigo-200/80 ml-6">
-              Change names, bedtime, wake time, rotation mode, and enable push notifications from the gear icon.
+              Change names, bedtime, wake time, rotation mode, and enable push
+              notifications from the gear icon.
             </p>
           </div>
 
