@@ -467,7 +467,7 @@ export default function App() {
   // ─── Loading screen ───────────────────────────────────────────────────────
   if (authStatus === 'loading') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">
+      <div className="min-h-dvh flex items-center justify-center bg-slate-900 text-white">
         <StarryBackground />
         <div className="animate-pulse">Loading StarTurn...</div>
       </div>
@@ -479,7 +479,7 @@ export default function App() {
     const savedName = localStorage.getItem('starturn_parent_name');
 
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-white p-6 relative overflow-hidden">
+      <div className="min-h-dvh flex flex-col items-center justify-center bg-slate-900 text-white p-6 relative overflow-hidden">
         <StarryBackground />
         <div className="z-10 w-full max-w-md text-center">
 
@@ -605,7 +605,7 @@ export default function App() {
   // ─── Loading state (authenticated but no data yet) ────────────────────────
   if (!state) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">
+      <div className="min-h-dvh flex items-center justify-center bg-slate-900 text-white">
         <StarryBackground />
         <div className="animate-pulse">Loading StarTurn...</div>
       </div>
@@ -641,7 +641,7 @@ export default function App() {
   const tonightParent = state.tonightFirstParent || state.settings.parent1_name;
 
   return (
-    <div className="min-h-screen text-white font-sans overflow-hidden relative selection:bg-indigo-500/30">
+    <div className="min-h-dvh text-white font-sans overflow-hidden relative selection:bg-indigo-500/30">
       <StarryBackground />
 
       {/* Header */}
@@ -716,7 +716,7 @@ export default function App() {
       </AnimatePresence>
 
       {/* Main Content */}
-      <main className="relative z-0 min-h-screen flex flex-col items-center pt-24 pb-20 px-6">
+      <main className="relative z-0 min-h-dvh flex flex-col items-center pt-24 pb-20 px-6">
         <AnimatePresence mode="wait">
           {isNight ? (
             // ─── NIGHT MODE ────────────────────────────────────────────────

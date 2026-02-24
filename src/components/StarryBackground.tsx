@@ -73,19 +73,12 @@ export function StarryBackground() {
       ref={canvasRef} 
       className="fixed -z-10 pointer-events-none"
       style={{
-        /* Extend past the safe-area insets so the stars fill behind the
-           iPhone notch / Dynamic Island. With viewport-fit=cover the browser
-           allows content in this area, but inset-0 alone stops at the
-           safe-area boundary. */
         top: 0,
         left: 0,
         right: 0,
         bottom: 0,
         width: '100%',
         height: '100%',
-        minHeight: '100dvh',
-        paddingTop: 'env(safe-area-inset-top, 0px)',
-        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
       }}
     />
   );
