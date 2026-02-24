@@ -467,7 +467,7 @@ export default function App() {
   // ─── Loading screen ───────────────────────────────────────────────────────
   if (authStatus === 'loading') {
     return (
-      <div className="min-h-dvh flex items-center justify-center bg-slate-900 text-white">
+      <div className="min-h-dvh flex items-center justify-center text-white">
         <StarryBackground />
         <div className="animate-pulse">Loading StarTurn...</div>
       </div>
@@ -479,7 +479,7 @@ export default function App() {
     const savedName = localStorage.getItem('starturn_parent_name');
 
     return (
-      <div className="min-h-dvh flex flex-col items-center justify-center bg-slate-900 text-white p-6 relative overflow-hidden">
+      <div className="min-h-dvh flex flex-col items-center justify-center text-white p-6 relative overflow-hidden">
         <StarryBackground />
         <div className="z-10 w-full max-w-md text-center">
 
@@ -605,7 +605,7 @@ export default function App() {
   // ─── Loading state (authenticated but no data yet) ────────────────────────
   if (!state) {
     return (
-      <div className="min-h-dvh flex items-center justify-center bg-slate-900 text-white">
+      <div className="min-h-dvh flex items-center justify-center text-white">
         <StarryBackground />
         <div className="animate-pulse">Loading StarTurn...</div>
       </div>
