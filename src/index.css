@@ -1,10 +1,1 @@
 @import "tailwindcss";
-
-/* Fill the area behind the iPhone notch / Dynamic Island with the app's
-   background colour. viewport-fit=cover (set in index.html) expands the
-   viewport to the full screen; this ensures no white strip appears at the
-   edges. The gradient itself is applied by individual page components. */
-html,
-body {
-  background-color: #1e1b4b;
-}
