@@ -1,0 +1,13 @@
+[build]
+# Build the Vite frontend before starting the server.
+# Without this, Railway runs `npm start` directly and the server crashes in
+# production mode because it tries to serve from dist/ which doesn't exist.
+buildCommand = "npm run build"
+
+[deploy]
+startCommand = "npm start"
+
+# Health check — Railway will wait for the server to be ready before
+# routing traffic to it, preventing requests hitting a cold-starting process.
+healthcheckPath = "/api/auth/me"
+healthcheckTimeout = 30
