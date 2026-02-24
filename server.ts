@@ -265,11 +265,20 @@ setInterval(() => {
     const allSettings = getAllSettings();
 
     allSettings.forEach((setting: any) => {
+      // Isolate each family in its own try/catch so a single bad record
+      // (e.g. a corrupt timezone) cannot abort processing for all other families.
+      try {
       const wakeTime = setting.wake_time || '07:00';
 
       // Each family may be in a different timezone. Compute the current
       // HH:mm in *their* local zone so all comparisons are correct.
-      const familyTimezone = setting.timezone || 'UTC';
+      // If the stored timezone is missing or unrecognised, skip this family
+      // rather than falling back to UTC and sending them wrong-time notifications.
+      const familyTimezone = setting.timezone || '';
+      if (!familyTimezone || !isValidTimezone(familyTimezone)) {
+        console.warn(`Scheduler: skipping family ${setting.family_id} — invalid timezone '${familyTimezone}'`);
+        return;
+      }
       const currentTime    = currentTimeInZone(now, familyTimezone);
 
       // Bedtime: send reminder notification with fun message
@@ -355,6 +364,10 @@ setInterval(() => {
           sendPushToFamily(setting.family_id, reminderMsg.title, reminderMsg.body);
         }
       }
+      } catch (familyError) {
+        // Log the error but continue processing the remaining families
+        console.error(`Scheduler error for family ${setting.family_id}:`, familyError);
+      }
     });
   } catch (error) {
     console.error('Scheduler error:', error);
@@ -382,6 +395,17 @@ function sanitizeName(name: string): string {
 
 function isValidRotationMode(mode: string): boolean {
   return mode === ROTATION_ALTERNATE_NIGHTLY || mode === ROTATION_CONTINUE_FROM_LAST;
+}
+
+// Validates an IANA timezone string by attempting to construct a DateTimeFormat
+// with it. Returns false for anything Intl doesn't recognise (e.g. 'Bad/Zone').
+function isValidTimezone(tz: string): boolean {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ─── Server ─────────────────────────────────────────────────────────────────
@@ -458,8 +482,13 @@ async function startServer() {
       const safeBedtime = bedtime && isValidTime(bedtime) ? bedtime : '22:00';
       const safeWakeTime = wakeTime && isValidTime(wakeTime) ? wakeTime : '07:00';
       // Capture the registering parent's browser timezone so the scheduler fires
-      // at the right local time. Falls back to 'UTC' if not provided.
-      const safeTimezone = typeof timezone === 'string' && timezone.trim() ? timezone.trim() : 'UTC';
+      // at the right local time. Reject unrecognised timezone strings up front so
+      // a bad value can never reach the scheduler.
+      const rawTimezone = typeof timezone === 'string' ? timezone.trim() : '';
+      if (rawTimezone && !isValidTimezone(rawTimezone)) {
+        return res.status(400).json({ error: 'Invalid timezone' });
+      }
+      const safeTimezone = rawTimezone || 'UTC';
 
       // Check if either email is already registered
       const existing = findFamilyByEmail(normalizedEmail);
@@ -638,11 +667,12 @@ async function startServer() {
       const safeRotation = rotationMode && isValidRotationMode(rotationMode) ? rotationMode : ROTATION_ALTERNATE_NIGHTLY;
 
       // IANA timezone string sent by the browser (e.g. "America/Chicago").
-      // Fall back to 'UTC' if absent or malformed rather than rejecting the save.
-      const safeTimezone: string =
-        typeof timezone === 'string' && timezone.trim().length > 0
-          ? timezone.trim()
-          : 'UTC';
+      // Reject unrecognised values so a bad timezone can never reach the scheduler.
+      const rawTimezone = typeof timezone === 'string' ? timezone.trim() : '';
+      if (rawTimezone && !isValidTimezone(rawTimezone)) {
+        return res.status(400).json({ error: 'Invalid timezone' });
+      }
+      const safeTimezone: string = rawTimezone || 'UTC';
 
       // Normalize reminderTime: a valid HH:mm string enables the evening reminder;
       // an empty string or missing value disables it (stores NULL in the DB).
