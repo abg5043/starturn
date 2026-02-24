@@ -553,20 +553,101 @@ async function startServer() {
     }
   });
 
+  // Renders a branded error page for magic link failures so the user is never
+  // left on a dead-end plain-text screen. viewport-fit=cover + safe-area-inset
+  // padding ensures the gradient fills the full iPhone screen including the
+  // area behind the notch / Dynamic Island.
+  const magicLinkErrorPage = (title: string, message: string) => `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+      <title>${title} — StarTurn</title>
+      <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+          min-height: 100vh;
+          min-height: 100dvh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          /* Safe-area padding so the gradient fills behind the notch/island */
+          padding:
+            env(safe-area-inset-top, 1rem)
+            env(safe-area-inset-right, 1rem)
+            env(safe-area-inset-bottom, 1rem)
+            env(safe-area-inset-left, 1rem);
+          background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e1b4b 100%);
+          font-family: system-ui, -apple-system, sans-serif;
+          color: #e0e7ff;
+        }
+        .card {
+          background: rgba(255,255,255,0.08);
+          border: 1px solid rgba(255,255,255,0.12);
+          border-radius: 1.5rem;
+          padding: 2.5rem 2rem;
+          max-width: 380px;
+          width: 100%;
+          text-align: center;
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+        }
+        .icon { font-size: 2.5rem; margin-bottom: 1rem; }
+        h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.75rem; }
+        p { color: rgba(199,210,254,0.8); line-height: 1.65; margin-bottom: 1.75rem; font-size: 0.95rem; }
+        a {
+          display: inline-block;
+          background: #6366f1;
+          color: white;
+          text-decoration: none;
+          padding: 0.8rem 1.75rem;
+          border-radius: 0.75rem;
+          font-weight: 600;
+          font-size: 0.95rem;
+          transition: background 0.2s;
+        }
+        a:hover { background: #4f46e5; }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="icon">🔒</div>
+        <h1>${title}</h1>
+        <p>${message}</p>
+        <a href="/">Request a New Link</a>
+      </div>
+    </body>
+    </html>
+  `;
+
   app.get("/api/auth/verify", (req, res) => {
     try {
       const token = req.query.token as string;
-      if (!token) return res.status(400).send('Missing token');
+      if (!token) {
+        return res.status(400).send(magicLinkErrorPage(
+          'Link Invalid',
+          'This sign-in link is missing its token. Please request a new one from the app.'
+        ));
+      }
 
       const result = consumeMagicLink(token);
-      if (!result) return res.status(400).send('Invalid or expired link. Please request a new one.');
+      if (!result) {
+        return res.status(400).send(magicLinkErrorPage(
+          'Link Expired',
+          'This sign-in link has expired or has already been used. Links are only valid for 15 minutes.'
+        ));
+      }
 
       const sessionToken = createSession(result.family_id, result.parent_index);
       res.cookie('starturn_session', sessionToken, cookieOptions);
       res.redirect('/');
     } catch (error: any) {
       console.error("Error in /api/auth/verify:", error);
-      res.status(500).send('Server error');
+      res.status(500).send(magicLinkErrorPage(
+        'Something Went Wrong',
+        'We hit an unexpected error while signing you in. Please try requesting a new link.'
+      ));
     }
   });
 
