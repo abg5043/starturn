@@ -214,6 +214,10 @@ export default function App() {
     try {
       const res = await fetch('/api/state');
       if (res.status === 401) {
+        // fetchState only runs while authenticated, so a 401 here means the
+        // session expired mid-use — show a clear explanation rather than a
+        // silent redirect to the login screen.
+        showToast('Your session has expired — please sign in again.', 'info');
         setAuthStatus('unauthenticated');
         return null;
       }
@@ -369,6 +373,14 @@ export default function App() {
     setLoginInput('');
   };
 
+  // ─── Pre-fill login email from localStorage ─────────────────────────────
+  // If the user has signed in before, their email is stored so the login
+  // screen is pre-filled after a session expiry — they only need to tap Continue.
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('starturn_last_email');
+    if (savedEmail) setLoginInput(savedEmail);
+  }, []);
+
   // ─── Login flow handlers ──────────────────────────────────────────────────
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
@@ -376,6 +388,10 @@ export default function App() {
     const email = loginInput.trim().toLowerCase();
     if (!email) return;
     setPendingEmail(email);
+
+    // Persist the email so the login screen can be pre-filled if the session
+    // expires and the user is returned here later.
+    localStorage.setItem('starturn_last_email', email);
 
     // Clear any previous error and lock the button for the duration of the request
     setEmailError(null);
