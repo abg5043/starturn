@@ -469,7 +469,7 @@ export default function App() {
     return (
       <div className="min-h-dvh flex items-center justify-center text-white">
         <StarryBackground />
-        <div className="animate-pulse">Loading StarTurn...</div>
+        <div className="animate-pulse relative z-10">Loading StarTurn...</div>
       </div>
     );
   }
@@ -607,7 +607,7 @@ export default function App() {
     return (
       <div className="min-h-dvh flex items-center justify-center text-white">
         <StarryBackground />
-        <div className="animate-pulse">Loading StarTurn...</div>
+        <div className="animate-pulse relative z-10">Loading StarTurn...</div>
       </div>
     );
   }
@@ -716,7 +716,7 @@ export default function App() {
       </AnimatePresence>
 
       {/* Main Content */}
-      <main className="relative z-0 min-h-dvh flex flex-col items-center pt-24 pb-20 px-6">
+      <main className="relative z-10 min-h-dvh flex flex-col items-center pt-24 pb-20 px-6">
         <AnimatePresence mode="wait">
           {isNight ? (
             // ─── NIGHT MODE ────────────────────────────────────────────────
