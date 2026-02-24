@@ -11,14 +11,16 @@ export function StarryBackground() {
     if (!ctx) return;
 
     let stars: Array<{x: number, y: number, radius: number, alpha: number, speed: number}> = [];
+    let cssWidth = 0;
+    let cssHeight = 0;
 
     const initStars = () => {
       stars = [];
-      const count = Math.floor((canvas.width * canvas.height) / 3000);
+      const count = Math.floor((cssWidth * cssHeight) / 3000);
       for (let i = 0; i < count; i++) {
         stars.push({
-          x: Math.random() * canvas.width,
-          y: Math.random() * canvas.height,
+          x: Math.random() * cssWidth,
+          y: Math.random() * cssHeight,
           radius: Math.random() * 1.5,
           alpha: Math.random(),
           speed: 0 // No speed needed for static
@@ -28,14 +30,14 @@ export function StarryBackground() {
 
     const draw = () => {
       if (!ctx || !canvas) return;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.clearRect(0, 0, cssWidth, cssHeight);
       
       // Draw background gradient
-      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      const gradient = ctx.createLinearGradient(0, 0, 0, cssHeight);
       gradient.addColorStop(0, '#0f172a'); // Slate 900
       gradient.addColorStop(1, '#1e1b4b'); // Indigo 950
       ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, cssWidth, cssHeight);
 
       // Draw stars
       ctx.fillStyle = 'white';
@@ -48,13 +50,23 @@ export function StarryBackground() {
     };
 
     const resize = () => {
-      if (!canvas) return;
+      if (!canvas || !ctx) return;
       // On iOS Safari, visualViewport gives the actual visible area accounting
       // for dynamic UI (address bar, tab bar). Fall back to window dimensions
       // for other browsers.
       const vp = window.visualViewport;
-      canvas.width = vp ? vp.width : window.innerWidth;
-      canvas.height = vp ? vp.height : window.innerHeight;
+      cssWidth = vp ? vp.width : window.innerWidth;
+      cssHeight = vp ? vp.height : window.innerHeight;
+      const dpr = window.devicePixelRatio || 1;
+      
+      // Set canvas resolution to physical pixels for crisp rendering
+      canvas.width = cssWidth * dpr;
+      canvas.height = cssHeight * dpr;
+      
+      // Reset transform and scale context to work in CSS pixels
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(dpr, dpr);
+      
       initStars();
       draw();
     };
