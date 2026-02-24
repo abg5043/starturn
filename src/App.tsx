@@ -104,6 +104,9 @@ export default function App() {
   // Shared loading guard for all night-mode action buttons (Done, Skip, Takeover).
   // A single flag prevents conflicting concurrent requests from any combination of taps.
   const [isActionLoading, setIsActionLoading] = useState(false);
+  // Tracks an override action (skip/takeover) that has been tapped once and is
+  // awaiting a second deliberate confirmation tap before firing the API call.
+  const [pendingAction, setPendingAction] = useState<'skip' | 'takeover' | null>(null);
   // Email login flow: loading and inline error state
   const [isEmailLoading, setIsEmailLoading] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
@@ -291,7 +294,15 @@ export default function App() {
       showToast(`Failed to ${actionLabel} — please try again.`, 'error');
     } finally {
       setIsActionLoading(false);
+      // Always dismiss the confirmation UI whether the request succeeded or failed
+      setPendingAction(null);
     }
+  };
+
+  // First tap on skip/takeover: stage the action for confirmation instead of firing immediately.
+  const requestOverrideTurn = (actionType: 'skip' | 'takeover') => {
+    if (isActionLoading) return;
+    setPendingAction(actionType);
   };
 
   const saveSettings = async () => {
@@ -823,26 +834,74 @@ export default function App() {
                         )}
                         <span>{isActionLoading ? 'Saving...' : 'Done \u2014 Going Back to Bed'}</span>
                       </button>
-                    <button
-                      onClick={() => handleOverrideTurn('skip')}
-                      disabled={isActionLoading}
-                      className={`text-sm text-indigo-300/60 underline underline-offset-2 transition-colors ${isActionLoading ? 'opacity-40 cursor-not-allowed' : 'hover:text-indigo-200'}`}
-                    >
-                      Skip my turn
-                    </button>
+                    {pendingAction === 'skip' ? (
+                      <div className="w-full rounded-xl bg-white/10 border border-white/10 p-4 text-center space-y-3">
+                        <p className="text-sm text-indigo-100">
+                          Pass this wakeup to {partnerName}?
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleOverrideTurn('skip')}
+                            disabled={isActionLoading}
+                            className={`flex-1 py-2 rounded-lg bg-indigo-500 text-white text-sm font-semibold transition-colors ${isActionLoading ? 'opacity-60 cursor-not-allowed' : 'hover:bg-indigo-400'}`}
+                          >
+                            {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Yes, skip my turn'}
+                          </button>
+                          <button
+                            onClick={() => setPendingAction(null)}
+                            disabled={isActionLoading}
+                            className="flex-1 py-2 rounded-lg bg-white/10 text-indigo-200 text-sm font-semibold hover:bg-white/20 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => requestOverrideTurn('skip')}
+                        disabled={isActionLoading}
+                        className={`text-sm text-indigo-300/60 underline underline-offset-2 transition-colors ${isActionLoading ? 'opacity-40 cursor-not-allowed' : 'hover:text-indigo-200'}`}
+                      >
+                        Skip my turn
+                      </button>
+                    )}
                   </>
                 ) : (
                   <>
                     <div className="text-indigo-200/60 text-sm font-medium">
                       {currentTurnParent} is on duty
                     </div>
-                    <button
-                      onClick={() => handleOverrideTurn('takeover')}
-                      disabled={isActionLoading}
-                      className={`text-sm text-indigo-300/60 underline underline-offset-2 transition-colors ${isActionLoading ? 'opacity-40 cursor-not-allowed' : 'hover:text-indigo-200'}`}
-                    >
-                      Let me take over for {currentTurnParent}
-                    </button>
+                    {pendingAction === 'takeover' ? (
+                      <div className="w-full rounded-xl bg-white/10 border border-white/10 p-4 text-center space-y-3">
+                        <p className="text-sm text-indigo-100">
+                          Take over from {currentTurnParent}?
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleOverrideTurn('takeover')}
+                            disabled={isActionLoading}
+                            className={`flex-1 py-2 rounded-lg bg-indigo-500 text-white text-sm font-semibold transition-colors ${isActionLoading ? 'opacity-60 cursor-not-allowed' : 'hover:bg-indigo-400'}`}
+                          >
+                            {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Yes, I've got it"}
+                          </button>
+                          <button
+                            onClick={() => setPendingAction(null)}
+                            disabled={isActionLoading}
+                            className="flex-1 py-2 rounded-lg bg-white/10 text-indigo-200 text-sm font-semibold hover:bg-white/20 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => requestOverrideTurn('takeover')}
+                        disabled={isActionLoading}
+                        className={`text-sm text-indigo-300/60 underline underline-offset-2 transition-colors ${isActionLoading ? 'opacity-40 cursor-not-allowed' : 'hover:text-indigo-200'}`}
+                      >
+                        Let me take over for {currentTurnParent}
+                      </button>
+                    )}
                   </>
                 )}
               </div>
