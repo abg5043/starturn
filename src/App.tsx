@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
-import { Settings, Moon, Check, Bell, Star, BookOpen, Mail, ArrowRightLeft, HelpCircle, Smartphone, CheckCircle, AlertTriangle, X, LogOut, Loader2 } from 'lucide-react';
+import { Settings, Moon, Check, Bell, Star, BookOpen, Mail, ArrowRightLeft, HelpCircle, Smartphone, CheckCircle, AlertTriangle, X, LogOut, Loader2, AlertCircle } from 'lucide-react';
 import { StarryBackground } from './components/StarryBackground';
 import { SetupScreen } from './components/SetupScreen';
 import { JournalModal } from './components/JournalModal';
@@ -104,6 +104,9 @@ export default function App() {
   // Shared loading guard for all night-mode action buttons (Done, Skip, Takeover).
   // A single flag prevents conflicting concurrent requests from any combination of taps.
   const [isActionLoading, setIsActionLoading] = useState(false);
+  // Email login flow: loading and inline error state
+  const [isEmailLoading, setIsEmailLoading] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
 
   // ─── Login flow state ─────────────────────────────────────────────────────
   const [loginInput, setLoginInput] = useState('');
@@ -363,12 +366,20 @@ export default function App() {
     if (!email) return;
     setPendingEmail(email);
 
+    // Clear any previous error and lock the button for the duration of the request
+    setEmailError(null);
+    setIsEmailLoading(true);
     try {
       const res = await fetch('/api/auth/email-lookup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
       });
+
+      if (!res.ok) {
+        throw new Error(`Server responded with ${res.status}`);
+      }
+
       const data = await res.json();
 
       if (data.status === 'known') {
@@ -379,6 +390,9 @@ export default function App() {
       }
     } catch (e) {
       console.error('Error looking up email:', e);
+      setEmailError("Couldn't send the link. Check your connection and try again.");
+    } finally {
+      setIsEmailLoading(false);
     }
   };
 
@@ -532,15 +546,26 @@ export default function App() {
                   type="email"
                   placeholder="you@example.com"
                   value={loginInput}
-                  onChange={(e) => setLoginInput(e.target.value)}
+                  onChange={(e) => { setLoginInput(e.target.value); setEmailError(null); }}
                   className="w-full bg-white/10 border border-white/20 rounded-xl px-6 py-4 text-center text-xl text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-indigo-500 backdrop-blur-md transition-all"
                   autoFocus
                 />
+                {emailError && (
+                  <p className="flex items-center gap-2 text-red-300 text-sm">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    {emailError}
+                  </p>
+                )}
                 <button
                   type="submit"
-                  className="w-full bg-white text-slate-900 font-bold py-4 rounded-xl hover:bg-indigo-50 transition-colors shadow-lg shadow-indigo-500/20"
+                  disabled={isEmailLoading || !loginInput.trim()}
+                  className={`w-full bg-white text-slate-900 font-bold py-4 rounded-xl transition-colors shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 ${
+                    isEmailLoading || !loginInput.trim() ? 'opacity-60 cursor-not-allowed' : 'hover:bg-indigo-50'
+                  }`}
                 >
-                  Continue
+                  {isEmailLoading ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Sending...</>
+                  ) : 'Continue'}
                 </button>
               </form>
             </>
