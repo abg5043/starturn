@@ -330,7 +330,9 @@ setInterval(() => {
         if (shouldAlternateNightly) {
           // Mirror the wake-time logic: find who went first last night,
           // then assign the opposite parent for tonight.
-          const lastNightDate      = computeNightContext(subDays(now, 1), setting.bedtime, wakeTime).nightDate;
+          // The family's timezone is required so "last night" is computed
+          // relative to their local clock, not the server's.
+          const lastNightDate      = computeNightContext(subDays(now, 1), setting.bedtime, wakeTime, familyTimezone).nightDate;
           const firstTripLastNight = getFirstTripOfNight(setting.family_id, lastNightDate);
 
           if (firstTripLastNight) {
