@@ -6,7 +6,7 @@ StarTurn is a joyful, synchronized web app designed to help parents (or partners
 
 - **Email-Based Auth:** Sign in with your email via magic link. No passwords to remember.
 - **Turn Tracking:** Clearly shows who is "On Duty" and who gets to rest.
-- **Two-Tap Flow:** Tap "I'm Going In" when the child wakes, then "Done" when you're back in bed.
+- **One-Tap Completion:** Tap "Done — Going Back to Bed" when you've handled the wake-up. The turn automatically passes to your partner.
 - **Night Rotation Modes:** Choose between "Alternate nightly" (swap who goes first each night) or "Pick up where we left off" (carry forward from last trip).
 - **Push Notifications:** Get notified when your partner completes their turn.
 - **Night Journal:** Browse a history of all nighttime activity, grouped by date.
@@ -20,7 +20,7 @@ StarTurn is a joyful, synchronized web app designed to help parents (or partners
 2. **Check your email:** Click the magic link to sign in.
 3. **Invite your partner:** They'll receive an invite email and can sign in with their own email.
 4. **Use it:**
-   - At night, the on-duty parent sees "I'm Going In" when the child wakes. Tap again ("Done") when you're back in bed.
+   - At night, the on-duty parent taps "Done — Going Back to Bed" after handling the wake-up.
    - The turn automatically passes to your partner.
    - During the day, you'll see a countdown to bedtime and who's up first tonight.
 
